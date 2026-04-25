@@ -13,7 +13,8 @@ def creative_director_agent(state: AgentState) -> AgentState:
     """
     user_interest = state.get("user_interest", "")
     historical_context = state.get("historical_context", {})
-    
+    correction_note = state.get("correction_note")  # Set by Historian on loop-back
+
     # Extract vibe and location from historical_context
     vibe = historical_context.get("vibe", "neutral")
     location = historical_context.get("location", "unspecified")
@@ -22,7 +23,20 @@ def creative_director_agent(state: AgentState) -> AgentState:
     if not user_interest:
         state["reasoning_log"].append({"agent": "Creative Director", "action": "Error", "message": "No user interest provided"})
         return state
-    
+
+    # Increment retry counter (starts at 0 in initial state)
+    state["retry_count"] = state.get("retry_count", 0) + 1
+
+    # Build the correction block that gets appended to the prompt on loop-back
+    correction_block = ""
+    if correction_note:
+        correction_block = f"""
+⚠️ HISTORIAN CORRECTION NOTE (Attempt #{state['retry_count']}):
+{correction_note}
+
+You MUST take this feedback into account and suggest entirely different objects this time.
+"""
+
     # Build the creative prompt for Gemma 4
     creative_prompt = f"""You are an elite Hollywood Production Designer. Your goal is to dress the set with objects that reflect the viewer's personality while staying invisible to the plot.
 
@@ -30,7 +44,7 @@ User Interest: {user_interest}
 Show: {show_name}
 Vibe: {vibe}
 Location: {location}
-
+{correction_block}
 Suggest exactly three distinct ambient objects that would appear naturally in this scene. 
 These objects should reflect the viewer's personality ({user_interest}) while being historically appropriate for the setting.
 

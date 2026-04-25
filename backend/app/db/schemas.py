@@ -12,3 +12,5 @@ class AgentState(TypedDict):
     audio_specs: dict
     reasoning_log: List[dict]
     guardrails_enabled: bool      # Added for Task 5.1
+    correction_note: Optional[str]  # Historian → Creative Director feedback
+    retry_count: int              # Guards against infinite loops (max 2 retries)

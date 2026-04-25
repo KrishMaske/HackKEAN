@@ -25,10 +25,19 @@ export default function SceneShiftUI() {
   const [guardrails, setGuardrails] = useState(true);
   const [data, setData] = useState<SceneResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [threadId, setThreadId] = useState<string>("default");
 
-  // --- Hydration Fix ---
+  // --- Hydration Fix + Thread ID Init ---
   useEffect(() => {
     setMounted(true);
+    // Generate or restore a stable session ID so the graph can persist memory
+    // across scene changes (Stranger Things → The Office etc.)
+    let id = sessionStorage.getItem("sceneshift_thread_id");
+    if (!id) {
+      id = `user_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      sessionStorage.setItem("sceneshift_thread_id", id);
+    }
+    setThreadId(id);
   }, []);
 
   // --- API Handshake ---
@@ -41,6 +50,7 @@ export default function SceneShiftUI() {
         body: JSON.stringify({
           user_interest: userInterest,
           scene_id: sceneId,
+          thread_id: threadId,
         }),
       });
       const result = await response.json();

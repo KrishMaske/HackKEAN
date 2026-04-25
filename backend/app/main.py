@@ -17,6 +17,7 @@ except ImportError:
 class GenerateSceneRequest(BaseModel):
     user_interest: str
     scene_id: str
+    thread_id: str = "default"  # Optional session key for checkpointing
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -79,7 +80,12 @@ async def generate_scene(request: GenerateSceneRequest, guardrails: bool = True)
     if not _HAS_ORCHESTRATOR:
         return {"success": False, "error": "orchestrator components unavailable"}
     try:
-        result = await execute_sceneshift(request.user_interest, request.scene_id, guardrails)        
+        result = await execute_sceneshift(
+            request.user_interest,
+            request.scene_id,
+            guardrails,
+            thread_id=request.thread_id,
+        )        
         
         # Grab the original scene metadata for the coordinates
         from app.db.database import scene_vault

@@ -74,10 +74,16 @@ THINKING: I thought about [Original], but the scene is {year}, so I chose [Subst
         elif line.startswith("THINKING:"):
             thinking_logs.append(line.replace("THINKING:", "").strip())
     
-    # Determine final selection - prefer valid objects, otherwise use substitutes
+    # Determine final selection
+    # If any validated/substituted objects exist, pick the best one and proceed.
+    # If NOTHING was returned (LLM parse failure), trigger a retry loop.
     if valid_objects:
         final_selection = valid_objects[0]
         reasoning = f"'{final_selection}' validated as historically accurate for {year}"
+        state["final_selection"] = final_selection
+        state["correction_note"] = None  # Clear any previous correction
+        state["reasoning_log"].append({"agent": "Historian", "action": "Validation", "message": reasoning})
+        state["reasoning_log"].append({"agent": "Historian", "action": "LLM Response", "message": f"Gemma 4 response: {gemma_response}"})
     elif substitutes:
         final_selection = substitutes[0]
         # Sponsor Hook Logic: prioritize the explicit 'THINKING' log if available
@@ -85,14 +91,25 @@ THINKING: I thought about [Original], but the scene is {year}, so I chose [Subst
             reasoning = thinking_logs[0]
         else:
             reasoning = f"Original object anachronistic, substituted with '{final_selection}' from {year}"
+        state["final_selection"] = final_selection
+        state["correction_note"] = None  # Substitution resolved it — no loop needed
+        state["reasoning_log"].append({"agent": "Historian", "action": "Substitution", "message": reasoning})
+        state["reasoning_log"].append({"agent": "Historian", "action": "LLM Response", "message": f"Gemma 4 response: {gemma_response}"})
     else:
-        # Fallback: use first proposed object if no clear validation
-        final_selection = proposed_objects[0]
-        reasoning = f"Using '{final_selection}' as fallback (could not validate)"
-    
-    # Update state
-    state["final_selection"] = final_selection
-    state["reasoning_log"].append({"agent": "Historian", "action": "Validation", "message": reasoning})
-    state["reasoning_log"].append({"agent": "Historian", "action": "LLM Response", "message": f"Gemma 4 response: {gemma_response}"})
-    
+        # Complete parse failure — build a rich correction note and send the graph back
+        rejected = ", ".join(f"'{o}'" for o in proposed_objects)
+        correction_note = (
+            f"Your suggestions ({rejected}) could not be validated for the year {year}. "
+            f"The following technologies are strictly forbidden: {forbidden_tech}. "
+            f"Please propose three completely different, era-appropriate objects that a '{state.get('user_interest', 'viewer')}' "
+            f"would recognise from {year}. Avoid anything invented after {year}."
+        )
+        state["final_selection"] = None
+        state["correction_note"] = correction_note
+        state["reasoning_log"].append({
+            "agent": "Historian",
+            "action": "Correction Required",
+            "message": f"Loop-back triggered. Note sent to Creative Director: {correction_note}"
+        })
+
     return state
