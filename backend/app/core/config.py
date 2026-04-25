@@ -8,6 +8,7 @@ load_dotenv()
 
 class Settings(BaseSettings):
     google_api_key: str = os.getenv("GOOGLE_API_KEY", "")
+    groq_api_key: str = os.getenv("GROQ_API_KEY", "")
     mongodb_uri: str = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
     
     @property
@@ -18,6 +19,16 @@ class Settings(BaseSettings):
         if not self.google_api_key:
             raise ValueError("GOOGLE_API_KEY is not set")
         return genai.Client(api_key=self.google_api_key)
+
+    @property
+    def groq_client(self):
+        """
+        Dynamically initializes the Groq client using the API key.
+        """
+        from groq import Groq
+        if not self.groq_api_key:
+            raise ValueError("GROQ_API_KEY is not set")
+        return Groq(api_key=self.groq_api_key)
 
     class Config:
         env_file = ".env"

@@ -21,11 +21,11 @@ class GenerateSceneRequest(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Handles startup tasks like seeding the MongoDB Scene Vault."""
-    print("🚀 Starting SceneShift API...")
+    print("[STARTUP] Starting SceneShift API...")
     if _HAS_ORCHESTRATOR:
         await seed_db()
     yield
-    print("🛑 Shutting down SceneShift API...")
+    print("[SHUTDOWN] Shutting down SceneShift API...")
 
 app = FastAPI(
     title="SceneShift API",
@@ -53,12 +53,12 @@ async def health_check():
 
 @app.post("/chat")
 async def chat(message: str):
-    client = settings.google_client
-    response = client.models.generate_content(
-        model="gemma-4-26b-a4b-it",
-        contents=message
+    client = settings.groq_client
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[{"role": "user", "content": message}]
     )
-    return {"response": response.text}
+    return {"response": response.choices[0].message.content}
 
 @app.post("/generate-scene")
 async def generate_scene(request: GenerateSceneRequest, guardrails: bool = True):

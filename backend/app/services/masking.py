@@ -1,280 +1,306 @@
-"""
-mask_pipeline.py
-----------------
-Reads the persisted bounding-box data for a given show_id from scene_vault.json,
-extracts every frame from the source video, draws a green bounding-box rectangle
-with a label around the tracked object, and encodes the annotated result as AVI.
-
-Key design decisions:
-  - Gemini returns sparse *keyframes* (typically 1/second).  We build a
-    timestamp-sorted list and linearly interpolate the bbox for every video
-    frame in between.
-  - Gemini sometimes returns coordinates in its native [0, 1000] normalised
-    space rather than actual pixel values.  We auto-detect this and
-    denormalize before rendering.
-
-Output contract:
-  - Original scene is preserved (full color)
-  - A green rectangle + label is drawn around the tracked object
-  - Same resolution & FPS as the source video
-  - Saved to  assets/masks/<show_id>_mask.avi
-"""
-
-import cv2
 import json
-import math
 import os
-from typing import Optional
+from pathlib import Path
+from typing import Dict, List, Optional
 
-VAULT_PATH = "app/db/data/scene_vault.json"
+import numpy as np
+from PIL import Image
+
+try:
+    import cv2
+except ImportError:  # pragma: no cover
+    cv2 = None
+
+try:
+    from sam3 import Sam3Processor
+except ImportError:  # pragma: no cover
+    Sam3Processor = None
+
+DATA_DIR = "app/db/data"
 MASKS_DIR = "assets/masks"
-os.makedirs(MASKS_DIR, exist_ok=True)
-
-# Annotation style
-BOX_COLOR        = (0, 255, 0)   # Lime green (BGR)
-BOX_THICKNESS    = 4
-FONT             = cv2.FONT_HERSHEY_SIMPLEX
-FONT_SCALE       = 0.8
-FONT_THICKNESS   = 2
-LABEL_BG_COLOR   = (0, 200, 0)
-LABEL_TEXT_COLOR  = (0, 0, 0)
+SAM3_MODEL_PATH = os.getenv("SAM3_MODEL_PATH", "meta/sam3-optimized")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Internal helpers
-# ─────────────────────────────────────────────────────────────────────────────
+def load_scene_metadata(show_id: str) -> Dict:
+    """Load scene data from app/db/data/{show_id}.json"""
+    filepath = os.path.join(DATA_DIR, f"{show_id}.json")
+    if not os.path.exists(filepath):
+        raise FileNotFoundError(f"Scene metadata not found at {filepath}")
 
-def _load_scene(show_id: str) -> Optional[dict]:
-    """Return the first scene entry matching *show_id* from scene_vault.json."""
-    if not os.path.exists(VAULT_PATH):
-        raise FileNotFoundError(f"scene_vault.json not found at {VAULT_PATH}")
+    with open(filepath, "r", encoding="utf-8") as handle:
+        scene = json.load(handle)
+        
+    return scene
 
-    with open(VAULT_PATH, "r") as f:
-        vault = json.load(f)
 
-    for scene in vault.get("scenes", []):
-        if scene.get("show_id") == show_id:
-            return scene
+def initialize_sam_processor() -> Optional[object]:
+    if Sam3Processor is None:
+        return None
+
+    return Sam3Processor.from_pretrained(SAM3_MODEL_PATH)
+
+
+def ensure_output_dirs(show_id: str) -> str:
+    alpha_dir = os.path.join(MASKS_DIR, show_id, "alpha")
+    os.makedirs(alpha_dir, exist_ok=True)
+    return alpha_dir
+
+
+def read_video_frames(video_path: str):
+    if cv2 is None:
+        raise RuntimeError("opencv-python is required for video frame processing. Please install opencv-python.")
+
+    capture = cv2.VideoCapture(video_path)
+    if not capture.isOpened():
+        raise IOError(f"Unable to open video file: {video_path}")
+
+    fps = capture.get(cv2.CAP_PROP_FPS) or 30.0
+    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    frames = []
+
+    while True:
+        success, frame = capture.read()
+        if not success:
+            break
+        frames.append(frame)
+
+    capture.release()
+    return frames, fps, width, height
+
+
+def normalize_anchor_mask(mask: np.ndarray, frame_height: int, frame_width: int) -> np.ndarray:
+    if mask.shape != (frame_height, frame_width):
+        mask_image = Image.fromarray(mask)
+        mask_image = mask_image.resize((frame_width, frame_height), Image.NEAREST)
+        mask = np.array(mask_image)
+
+    normalized = np.where(mask > 127, 255, 0).astype(np.uint8)
+    return normalized
+
+
+def load_manual_mask(mask_path: str, frame_height: int, frame_width: int) -> np.ndarray:
+    mask_image = Image.open(mask_path).convert("L")
+    mask_array = np.array(mask_image)
+    return normalize_anchor_mask(mask_array, frame_height, frame_width)
+
+
+def bbox_to_mask(bbox, frame_height: int, frame_width: int) -> np.ndarray:
+    mask = np.zeros((frame_height, frame_width), dtype=np.uint8)
+    if bbox and len(bbox) == 4 and all(v is not None for v in bbox) and all(isinstance(v, (int, float)) for v in bbox):
+        x0, y0, x1, y1 = [int(v) for v in bbox]
+        x0, y0 = max(0, x0), max(0, y0)
+        x1, y1 = min(frame_width, x1), min(frame_height, y1)
+        if x1 > x0 and y1 > y0:
+            mask[y0:y1, x0:x1] = 255
+    return mask
+
+
+def warp_mask(prev_mask: np.ndarray, prev_frame: np.ndarray, next_frame: np.ndarray) -> np.ndarray:
+    if cv2 is None:
+        raise RuntimeError("opencv-python is required for mask propagation.")
+
+    prev_gray = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
+    next_gray = cv2.cvtColor(next_frame, cv2.COLOR_BGR2GRAY)
+    flow = cv2.calcOpticalFlowFarneback(
+        prev_gray,
+        next_gray,
+        None,
+        pyr_scale=0.5,
+        levels=3,
+        winsize=15,
+        iterations=3,
+        poly_n=5,
+        poly_sigma=1.2,
+        flags=0,
+    )
+
+    h, w = prev_mask.shape
+    grid_x, grid_y = np.meshgrid(np.arange(w), np.arange(h))
+    map_x = (grid_x + flow[..., 0]).astype(np.float32)
+    map_y = (grid_y + flow[..., 1]).astype(np.float32)
+    warped = cv2.remap(prev_mask, map_x, map_y, interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+    return normalize_anchor_mask(warped, h, w)
+
+
+def sam_mask_from_prompt(sam_processor, frame: np.ndarray, prompt: str) -> Optional[np.ndarray]:
+    if sam_processor is None:
+        return None
+
+    if not prompt:
+        return None
+
+    try:
+        candidate = sam_processor.generate_mask(frame, prompt=prompt)
+        if candidate is None:
+            return None
+
+        if isinstance(candidate, np.ndarray):
+            return normalize_anchor_mask(candidate, frame.shape[0], frame.shape[1])
+
+        if isinstance(candidate, Image.Image):
+            candidate_arr = np.array(candidate.convert("L"))
+            return normalize_anchor_mask(candidate_arr, frame.shape[0], frame.shape[1])
+
+        if hasattr(candidate, "mask"):
+            candidate_arr = np.array(candidate.mask)
+            return normalize_anchor_mask(candidate_arr, frame.shape[0], frame.shape[1])
+
+    except Exception:
+        return None
 
     return None
 
 
-def _is_valid_bbox(bb) -> bool:
-    """True if bb is a 4-element list with no None values."""
-    return (
-        bb is not None
-        and isinstance(bb, list)
-        and len(bb) == 4
-        and all(v is not None for v in bb)
-    )
+def refine_mask(frame: np.ndarray, prompt: str, warped_mask: np.ndarray, sam_processor) -> np.ndarray:
+    if warped_mask is None:
+        return np.zeros((frame.shape[0], frame.shape[1]), dtype=np.uint8)
+
+    sam_candidate = sam_mask_from_prompt(sam_processor, frame, prompt)
+    if sam_candidate is None:
+        return warped_mask
+
+    combined = np.where(sam_candidate > 0, 255, warped_mask)
+    return normalize_anchor_mask(combined, frame.shape[0], frame.shape[1])
 
 
-def _detect_normalized(frame_bboxes: list, width: int, height: int) -> bool:
-    """
-    Heuristic: if ALL valid bounding-box coordinates fall within [0, 1000]
-    and the video is larger than 1000px on either axis, assume the coords
-    are in Gemini's normalised [0, 1000] space.
-    """
-    max_dim = max(width, height)
-    if max_dim <= 1000:
-        return False          # video fits inside 1000px — can't tell
-
-    for entry in frame_bboxes:
-        bb = entry.get("bounding_box")
-        if not _is_valid_bbox(bb):
-            continue
-        if any(v > 1000 for v in bb):
-            return False      # at least one coord exceeds 1000 → pixel space
-    return True               # everything ≤ 1000 on a bigger video → normalised
+def save_alpha_mask(mask: np.ndarray, output_path: str) -> None:
+    Image.fromarray(mask).save(output_path)
 
 
-def _denormalize(bb: list, width: int, height: int) -> list:
-    """Convert [0, 1000] normalised coords to actual pixel coords."""
-    x_min, y_min, x_max, y_max = bb
-    return [
-        x_min / 1000.0 * width,
-        y_min / 1000.0 * height,
-        x_max / 1000.0 * width,
-        y_max / 1000.0 * height,
-    ]
+def render_mask_video(alpha_dir: str, output_path: str, fps: float, width: int, height: int) -> None:
+    if cv2 is None:
+        raise RuntimeError("opencv-python is required for mask video rendering.")
+
+    frame_files = sorted(Path(alpha_dir).glob("frame_*.png"))
+    if not frame_files:
+        raise FileNotFoundError("No alpha masks found to render into video.")
+
+    fourcc = cv2.VideoWriter_fourcc(*"XVID")
+    writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height), isColor=False)
+
+    if not writer.isOpened():
+        raise IOError(f"Unable to open VideoWriter for {output_path}")
+
+    for frame_file in frame_files:
+        mask_img = cv2.imread(str(frame_file), cv2.IMREAD_GRAYSCALE)
+        if mask_img is None:
+            raise IOError(f"Unable to read mask frame: {frame_file}")
+        writer.write(mask_img)
+
+    writer.release()
 
 
-def _build_keyframes(frame_bboxes: list, width: int, height: int) -> list:
-    """
-    Build a sorted list of (timestamp_ms, [x_min, y_min, x_max, y_max])
-    keyframes from the vault data.  Invalid / null entries are skipped.
-    Coordinates are denormalized if needed.
-    """
-    normalised = _detect_normalized(frame_bboxes, width, height)
-    if normalised:
-        print("[MASK]   ↳ Detected normalised [0-1000] coords — converting to pixels")
+def render_overlay_video(frames: List[np.ndarray], masks: List[np.ndarray], output_path: str, fps: float, width: int, height: int) -> None:
+    if cv2 is None:
+        return
 
-    keyframes = []
-    for entry in frame_bboxes:
-        bb = entry.get("bounding_box")
-        if not _is_valid_bbox(bb):
-            continue
-        ts = entry.get("timestamp_ms", 0)
-        coords = _denormalize(bb, width, height) if normalised else list(bb)
-        keyframes.append((ts, coords))
-
-    keyframes.sort(key=lambda k: k[0])
-    return keyframes
-
-
-def _lerp_bbox(bb_a: list, bb_b: list, t: float) -> list:
-    """Linearly interpolate between two bounding boxes.  t ∈ [0, 1]."""
-    return [
-        bb_a[i] + (bb_b[i] - bb_a[i]) * t
-        for i in range(4)
-    ]
-
-
-def _bbox_at_timestamp(keyframes: list, ts_ms: float) -> Optional[list]:
-    """
-    Given sorted keyframes and a timestamp, return an interpolated bbox.
-    - Before the first keyframe  → use the first keyframe's bbox.
-    - After the last keyframe   → use the last keyframe's bbox.
-    - Between two keyframes     → linear interpolation.
-    """
-    if not keyframes:
-        return None
-
-    # Before or at first keyframe
-    if ts_ms <= keyframes[0][0]:
-        return list(keyframes[0][1])
-
-    # After or at last keyframe
-    if ts_ms >= keyframes[-1][0]:
-        return list(keyframes[-1][1])
-
-    # Find the two surrounding keyframes
-    for i in range(len(keyframes) - 1):
-        ts_a, bb_a = keyframes[i]
-        ts_b, bb_b = keyframes[i + 1]
-        if ts_a <= ts_ms <= ts_b:
-            span = ts_b - ts_a
-            if span == 0:
-                return list(bb_a)
-            t = (ts_ms - ts_a) / span
-            return _lerp_bbox(bb_a, bb_b, t)
-
-    return list(keyframes[-1][1])
-
-
-def _draw_annotation(frame, x_min, y_min, x_max, y_max, label: str):
-    """Draw a green bounding box + filled label chip above it."""
-    cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), BOX_COLOR, BOX_THICKNESS)
-
-    (text_w, text_h), baseline = cv2.getTextSize(label, FONT, FONT_SCALE, FONT_THICKNESS)
-    chip_y1 = max(0, y_min - text_h - baseline - 8)
-    chip_y2 = max(text_h + baseline, y_min)
-    cv2.rectangle(frame, (x_min, chip_y1), (x_min + text_w + 8, chip_y2), LABEL_BG_COLOR, -1)
-
-    cv2.putText(
-        frame, label,
-        (x_min + 4, chip_y2 - baseline - 2),
-        FONT, FONT_SCALE, LABEL_TEXT_COLOR, FONT_THICKNESS, cv2.LINE_AA,
-    )
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Public API
-# ─────────────────────────────────────────────────────────────────────────────
-
-def generate_mask_video(show_id: str) -> str:
-    """
-    Reads scene_vault.json for show_id, draws per-frame green bounding boxes
-    on the original video using timestamp-based interpolation, and saves the
-    annotated output.
-
-    Returns the absolute path to the written file.
-    """
-    # ── 1. Load scene metadata ────────────────────────────────────────────────
-    scene = _load_scene(show_id)
-    if scene is None:
-        raise ValueError(
-            f"No scene with show_id='{show_id}' found in scene_vault.json. "
-            "Ingest the video first via POST /ingest/video."
-        )
-
-    video_path = scene.get("filepath")
-    if not video_path or not os.path.exists(video_path):
-        raise FileNotFoundError(
-            f"Source video '{video_path}' for show_id='{show_id}' not found on disk."
-        )
-
-    frame_bboxes = scene.get("frame_bounding_boxes", [])
-    if not frame_bboxes:
-        raise ValueError(f"No frame_bounding_boxes for show_id='{show_id}'.")
-
-    target_object = scene.get("target_object", "object").upper()
-
-    # ── 2. Open source video ──────────────────────────────────────────────────
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        raise RuntimeError(f"OpenCV could not open video: {video_path}")
-
-    width        = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height       = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps          = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-
-    # ── 3. Build timestamp-indexed keyframes ──────────────────────────────────
-    keyframes = _build_keyframes(frame_bboxes, width, height)
-    print(
-        f"[MASK] {show_id} | {total_frames} frames | {width}x{height} "
-        f"@ {fps:.1f} fps | {len(keyframes)} keyframes | object: {target_object}"
-    )
-
-    if not keyframes:
-        cap.release()
-        raise ValueError(
-            f"All bounding boxes for show_id='{show_id}' are null — nothing to annotate."
-        )
-
-    # ── 4. Set up output writer (XVID + AVI — most reliable on Windows) ───────
-    output_path = os.path.join(MASKS_DIR, f"{show_id}_mask.avi")
     fourcc = cv2.VideoWriter_fourcc(*"XVID")
     writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height), isColor=True)
 
     if not writer.isOpened():
-        cap.release()
-        raise RuntimeError(f"OpenCV VideoWriter failed for: {output_path}")
+        raise IOError(f"Unable to open VideoWriter for {output_path}")
 
-    # ── 5. Frame-by-frame annotation via timestamp interpolation ──────────────
-    frame_idx      = 0
-    rendered_count = 0
-    skipped_count  = 0
-    ms_per_frame   = 1000.0 / fps
+    for frame, mask in zip(frames, masks):
+        overlay = frame.copy()
+        # Apply a semi-transparent green overlay where the mask is active
+        overlay[mask == 255] = [0, 255, 0] # BGR green
+        blended = cv2.addWeighted(overlay, 0.4, frame, 0.6, 0)
+        writer.write(blended)
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-
-        ts_ms = frame_idx * ms_per_frame
-        bbox  = _bbox_at_timestamp(keyframes, ts_ms)
-
-        if bbox is not None:
-            x_min = max(0, int(round(bbox[0])))
-            y_min = max(0, int(round(bbox[1])))
-            x_max = min(width  - 1, int(round(bbox[2])))
-            y_max = min(height - 1, int(round(bbox[3])))
-
-            if x_max > x_min and y_max > y_min:
-                _draw_annotation(frame, x_min, y_min, x_max, y_max, target_object)
-                rendered_count += 1
-            else:
-                skipped_count += 1
-        else:
-            skipped_count += 1
-
-        writer.write(frame)
-        frame_idx += 1
-
-    cap.release()
     writer.release()
 
-    print(f"[MASK] Done -> {output_path} | annotated={rendered_count} | blank={skipped_count}")
-    return os.path.abspath(output_path)
+
+def generate_temporal_alpha_masks(
+    show_id: str,
+    manual_mask_path: Optional[str] = None,
+    anchor_frame_index: int = 0,
+    prompt: Optional[str] = None,
+) -> Dict[str, object]:
+    scene = load_scene_metadata(show_id)
+    video_path = scene.get("filepath")
+    if not video_path:
+        raise ValueError("Scene metadata is missing a valid video filepath.")
+
+    if not os.path.exists(video_path):
+        raise FileNotFoundError(f"Video path does not exist: {video_path}")
+
+    frames, fps, width, height = read_video_frames(video_path)
+    if not frames:
+        raise ValueError("No frames were extracted from the video.")
+
+    if anchor_frame_index < 0 or anchor_frame_index >= len(frames):
+        raise ValueError("anchor_frame_index must be within the video frame count.")
+
+    alpha_dir = ensure_output_dirs(show_id)
+    mask_video_path = os.path.join(MASKS_DIR, f"{show_id}_mask.avi")
+    preview_video_path = os.path.join(MASKS_DIR, f"{show_id}_preview.avi")
+
+    prompt_text = prompt or scene.get("target_object") or "the object marked by the provided mask"
+    sam_processor = initialize_sam_processor()
+
+    anchor_frame = frames[anchor_frame_index]
+    if manual_mask_path and os.path.exists(manual_mask_path):
+        anchor_mask = load_manual_mask(manual_mask_path, height, width)
+    else:
+        # Get initial bounding box, which could be in the root of the scene data or first frame bounding box
+        initial_bbox = scene.get("initial_bounding_box")
+        if not initial_bbox and scene.get("frame_bounding_boxes"):
+            initial_bbox = scene.get("frame_bounding_boxes")[0].get("bounding_box")
+        anchor_mask = bbox_to_mask(initial_bbox, height, width)
+
+    if anchor_mask.sum() == 0:
+        raise ValueError("Unable to build an anchor mask from the manual input or scene metadata.")
+
+    masks = [None] * len(frames)
+    masks[anchor_frame_index] = anchor_mask
+
+    for idx in range(anchor_frame_index + 1, len(frames)):
+        warped = warp_mask(masks[idx - 1], frames[idx - 1], frames[idx])
+        masks[idx] = refine_mask(frames[idx], prompt_text, warped, sam_processor)
+
+    for idx in range(anchor_frame_index - 1, -1, -1):
+        warped = warp_mask(masks[idx + 1], frames[idx + 1], frames[idx])
+        masks[idx] = refine_mask(frames[idx], prompt_text, warped, sam_processor)
+
+    frame_urls: List[str] = []
+    for idx, mask in enumerate(masks):
+        output_path = os.path.join(alpha_dir, f"frame_{idx:04d}.png")
+        save_alpha_mask(mask, output_path)
+        frame_urls.append(f"/masks/{show_id}/alpha/frame_{idx:04d}.png")
+
+    render_mask_video(alpha_dir, mask_video_path, fps, width, height)
+    render_overlay_video(frames, masks, preview_video_path, fps, width, height)
+    print(f"[MASK] Generated Preview Video -> {preview_video_path}")
+
+    return {
+        "show_id": show_id,
+        "frame_count": len(masks),
+        "mask_directory": alpha_dir,
+        "mask_video": mask_video_path,
+        "frame_urls": frame_urls,
+        "preview_url": frame_urls[0] if frame_urls else None,
+    }
+
+
+def generate_mask_video(show_id: str) -> str:
+    """
+    Wrapper function to maintain backward compatibility with ingestion.py
+    Calls the new SAM3 pipeline and returns the absolute path to the mask video.
+    """
+    result = generate_temporal_alpha_masks(show_id)
+    return os.path.abspath(result["mask_video"])
+
+
+def mask_status(show_id: str) -> Dict[str, object]:
+    alpha_dir = os.path.join(MASKS_DIR, show_id, "alpha")
+    if not os.path.exists(alpha_dir):
+        return {"ready": False, "frame_count": 0, "mask_directory": alpha_dir}
+
+    files = sorted([p for p in os.listdir(alpha_dir) if p.endswith(".png")])
+    return {
+        "ready": True,
+        "frame_count": len(files),
+        "mask_directory": alpha_dir,
+        "preview_url": f"/masks/{show_id}/alpha/{files[0]}" if files else None,
+    }
