@@ -20,9 +20,12 @@ class GenerateSceneRequest(BaseModel):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Handles startup tasks like seeding the MongoDB Scene Vault."""
+    print("🚀 Starting SceneShift API...")
     if _HAS_ORCHESTRATOR:
         await seed_db()
     yield
+    print("🛑 Shutting down SceneShift API...")
 
 app = FastAPI(
     title="SceneShift API",
@@ -43,6 +46,10 @@ app.mount("/masks", StaticFiles(directory=MASKS_DIR), name="masks")
 @app.get("/")
 async def root():
     return {"message": "SceneShift Orchestrator Active", "status": "Ready"}
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
 
 @app.post("/chat")
 async def chat(message: str):
