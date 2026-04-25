@@ -3,23 +3,18 @@ import re
 import time
 import json
 import cv2
+import base64
 from app.core.config import settings
 from app.services.masking import generate_mask_video
-from google.genai import types
 
 DATA_DIR = "app/db/data"
 os.makedirs(DATA_DIR, exist_ok=True)
 
-# The user explicitly requested to switch back to Gemini
-# because Groq was detecting the wrong object.
-MODEL_NAME = "gemini-2.5-flash"
+GROQ_VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+GROQ_TEXT_MODEL = "llama-3.3-70b-versatile"
 
 
 def _parse_json_response(text: str) -> dict:
-    """
-    Robustly extract a JSON object from a response.
-    Handles cases where the model wraps output in markdown code fences.
-    """
     text = text.strip()
     text = re.sub(r"^```(?:json)?\s*", "", text)
     text = re.sub(r"\s*```$", "", text)
@@ -34,11 +29,12 @@ def _parse_json_response(text: str) -> dict:
         raise
 
 
-def _extract_keyframes(video_path: str, num_frames: int = 1) -> list:
-    """
-    Extract evenly-spaced frames from the video.
-    We now only need 1 frame because SAM3 will track it for the rest of the video!
-    """
+def _image_to_base64(image_path: str) -> str:
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode('utf-8')
+
+
+def _extract_keyframes(video_path: str, num_frames: int = 5) -> list:
     cap = cv2.VideoCapture(video_path)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
@@ -48,6 +44,10 @@ def _extract_keyframes(video_path: str, num_frames: int = 1) -> list:
     if total_frames <= 0:
         cap.release()
         raise ValueError("Could not read frame count from video.")
+
+    # If num_frames is 0, calculate 1 keyframe per second
+    if num_frames == 0:
+        num_frames = max(1, int(total_frames / fps))
 
     num_frames = min(num_frames, total_frames)
     step = max(1, total_frames // num_frames)
@@ -72,124 +72,121 @@ def _extract_keyframes(video_path: str, num_frames: int = 1) -> list:
 
 
 def _detect_object_in_first_frame(client, first_frame_path: str, width: int, height: int) -> str:
-    """
-    Send the first frame to Gemini and ask it to identify the most prominent
-    trackable inanimate object. Returns the object name.
-    """
-    frame_file = client.files.upload(file=first_frame_path)
+    base64_image = _image_to_base64(first_frame_path)
 
     prompt = f"""You are an object detection system. This image is {width}x{height} pixels.
 
-Identify the ONE most prominent, inanimate, trackable object in this scene.
-Pick something that is clearly visible and likely to remain in frame across multiple shots
-(e.g. a cup, lamp, phone, bucket, poster, furniture piece, etc).
+Identify the ONE most prominent, inanimate, trackable PRODUCT or HANDHELD item in this scene.
+Pick something that is clearly visible and likely to be the subject of a product placement 
+(e.g., a branded cup, food bucket, soda can, phone, etc). 
+
+CRITICAL: DO NOT select large furniture (like tables, chairs, couches) or background elements.
 
 Respond with ONLY the object name in lowercase, nothing else.
-Example: "red coffee mug"
+Example: "kfc bucket" or "coca cola can"
 """
     for attempt in range(3):
         try:
-            response = client.models.generate_content(
-                model=MODEL_NAME,
-                contents=[frame_file, prompt],
-                config=types.GenerateContentConfig(temperature=0.1)
+            response = client.chat.completions.create(
+                model=GROQ_VISION_MODEL,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{base64_image}"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                temperature=0.1,
             )
-            return response.text.strip().strip('"').strip("'")
+            return response.choices[0].message.content.strip().strip('"').strip("'")
         except Exception as e:
-            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+            if "429" in str(e):
                 print(f"[WARN] Identification rate limited. Waiting 60s to reset...")
                 time.sleep(60)
             else:
                 print(f"[WARN] Identification failed: {e}")
                 return "object"
     
-    # 5-second delay to stay under the 5 RPM limit
-    time.sleep(5)
+    time.sleep(1)
     return "object"
 
 
-def _detect_bbox_batch(client, frame_paths: list, target_object: str,
-                        width: int, height: int) -> list:
+def _detect_initial_bbox(client, target_object: str, frame_path: str, width: int, height: int) -> list:
     """
-    Send frames to Gemini and get bounding boxes for the target object.
-    Since we optimized, this will only run on 1 frame to serve as the SAM3 anchor.
+    Uses Groq to get the anchor bounding box on Frame 0.
     """
-    results = []
+    base64_image = _image_to_base64(frame_path)
 
-    for ts_ms, frame_idx, frame_path in frame_paths:
-        frame_file = client.files.upload(file=frame_path)
+    prompt = f"""You are a precision object detector.
 
-        prompt = f"""You are a precision object detector. This image is {width}x{height} pixels.
-
-Find the object "{target_object}" in this image and return its TIGHT bounding box
-in PIXEL coordinates for this {width}x{height} image.
-
-Coordinate system:
-- x increases left to right (0 = left edge, {width} = right edge)
-- y increases top to bottom (0 = top edge, {height} = bottom edge)
+Find the object "{target_object}" in this image and return its TIGHT bounding box.
 
 CRITICAL RULES:
 - The bounding box must TIGHTLY enclose the object — not the general area.
-- Use ACTUAL pixel coordinates for {width}x{height}, NOT normalized 0-1000 values.
+- Use NORMALIZED coordinates from 0 to 1000.
+- (0,0) is top-left, (1000, 1000) is bottom-right.
 - If the object is NOT visible, return null values.
 
 Respond with ONLY a JSON object:
 {{"x_min": int, "y_min": int, "x_max": int, "y_max": int}}
-
-If the object is not visible:
-{{"x_min": null, "y_min": null, "x_max": null, "y_max": null}}
 """
-        bbox = [None, None, None, None]
-        for attempt in range(3):
-            try:
-                response = client.models.generate_content(
-                    model=MODEL_NAME,
-                    contents=[frame_file, prompt],
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        temperature=0.1
-                    )
-                )
+    for attempt in range(3):
+        try:
+            response = client.chat.completions.create(
+                model=GROQ_VISION_MODEL,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{base64_image}"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                temperature=0.1,
+                response_format={"type": "json_object"}
+            )
 
-                if response.text:
-                    bbox_data = _parse_json_response(response.text)
+            content = response.choices[0].message.content
+            if content:
+                bbox_data = _parse_json_response(content)
+                if bbox_data.get("x_min") is not None and bbox_data.get("x_max") is not None:
                     bbox = [
-                        bbox_data.get("x_min"),
-                        bbox_data.get("y_min"),
-                        bbox_data.get("x_max"),
-                        bbox_data.get("y_max"),
+                        int(bbox_data["x_min"] * width / 1000.0),
+                        int(bbox_data["y_min"] * height / 1000.0),
+                        int(bbox_data["x_max"] * width / 1000.0),
+                        int(bbox_data["y_max"] * height / 1000.0),
                     ]
-                    break
-            except Exception as e:
-                if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                    print(f"[WARN] Frame {frame_idx} rate limited. Waiting 60s...")
-                    time.sleep(60)
-                else:
-                    print(f"[WARN] BBox detection failed for frame {frame_idx}: {e}")
-                    break
-
-        results.append({
-            "frame_index": frame_idx,
-            "timestamp_ms": ts_ms,
-            "bounding_box": bbox
-        })
-
-        print(f"  [DETECT] frame={frame_idx} ts={ts_ms}ms bbox={bbox}")
-        # 5-second delay to stay under the 5 RPM limit
-        time.sleep(5)
-
-    return results
+                    print(f"[INGEST] Initial Anchor BBox from Groq: {bbox}")
+                    return bbox
+        except Exception as e:
+            if "429" in str(e):
+                print(f"[WARN] Initial bbox detection rate limited. Waiting 60s...")
+                time.sleep(60)
+            else:
+                print(f"[WARN] Initial bbox detection failed: {e}")
+                break
+        
+    return [None, None, None, None]
 
 
 def analyze_data(path, show_id):
-    """
-    Main ingestion pipeline using Google Gemini.
-    """
-    client = settings.google_client
+    client = settings.groq_client
 
-    # ── 1. Extract keyframes from the video ──────────────────────────────────
     print(f"[INGEST] Extracting keyframes from: {path}")
-    # We only extract 1 frame now because SAM3 tracks the rest of the video automatically!
+    # Extract just the first frame since Optical Flow handles the rest
     frames, vid_width, vid_height, vid_fps, total_frames = _extract_keyframes(path, num_frames=1)
     vid_duration_s = total_frames / vid_fps
     print(f"[INGEST] Video: {vid_width}x{vid_height} @ {vid_fps:.1f}fps, "
@@ -198,51 +195,60 @@ def analyze_data(path, show_id):
     if not frames:
         raise Exception("Failed to extract any frames from the video.")
 
-    # ── 2. Detect the target object from the first frame ─────────────────────
-    print("[INGEST] Identifying target object (via Gemini)...")
+    print("[INGEST] Identifying target object (via Groq)...")
     target_object = _detect_object_in_first_frame(
         client, frames[0][2], vid_width, vid_height
     )
     print(f"[INGEST] Target object: {target_object}")
 
-    # ── 3. Get the initial bounding box for the anchor frame ─────────────────
-    print(f"[INGEST] Detecting bounding box anchor...")
-    frame_bboxes = _detect_bbox_batch(
-        client, frames, target_object, vid_width, vid_height
+    print(f"[INGEST] Detecting tight anchor bounding box on Frame 0 (via Groq)...")
+    initial_bbox = _detect_initial_bbox(
+        client, target_object, frames[0][2], vid_width, vid_height
     )
 
-    # ── 4. Extract metadata ──────────────────────────────────────────────────
-    print("[INGEST] Extracting metadata (via Gemini)...")
-    first_frame_file = client.files.upload(file=frames[0][2])
-    meta_prompt = """Look at this video frame. Determine:
-1. The approximate production year of this scene (based on visual style, technology visible, etc.)
+    print("[INGEST] Extracting metadata (via Groq)...")
+    base64_first = _image_to_base64(frames[0][2])
+    
+    desc_response = client.chat.completions.create(
+        model=GROQ_VISION_MODEL,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Describe this video frame in detail, focusing on visual style, technology, and setting."},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{base64_first}"
+                        }
+                    }
+                ]
+            }
+        ]
+    )
+    description = desc_response.choices[0].message.content
+
+    meta_prompt = f"""Based on this visual description of a video frame, determine:
+1. The approximate production year of this scene.
 2. The visual setting/location (e.g. "Living Room", "Office", "Kitchen", etc.)
 
+Visual Description: {description}
+
 Respond with ONLY a JSON object:
-{"production_year": int, "location": "string"}
+{{"production_year": int, "location": "string"}}
 """
     meta = {"production_year": 0, "location": "Unknown"}
-    for attempt in range(3):
-        try:
-            meta_response = client.models.generate_content(
-                model=MODEL_NAME,
-                contents=[first_frame_file, meta_prompt],
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.2
-                )
-            )
-            meta = _parse_json_response(meta_response.text)
-            break
-        except Exception as e:
-            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                print(f"[WARN] Metadata rate limited. Waiting 60s...")
-                time.sleep(60)
-            else:
-                print(f"[WARN] Metadata extraction failed: {e}")
-                break
+    try:
+        meta_response = client.chat.completions.create(
+            model=GROQ_TEXT_MODEL,
+            messages=[{"role": "user", "content": meta_prompt}],
+            temperature=0.2,
+            response_format={"type": "json_object"}
+        )
+        meta = _parse_json_response(meta_response.choices[0].message.content)
+    except Exception as e:
+        print(f"[WARN] Metadata extraction failed: {e}")
 
-    # ── 5. Build the scene data ──────────────────────────────────────────────
     scene_data = {
         "show_id": show_id,
         "filepath": path,
@@ -253,19 +259,13 @@ Respond with ONLY a JSON object:
         "video_height": vid_height,
         "video_fps": vid_fps,
         "total_frames": total_frames,
-        "frame_bounding_boxes": frame_bboxes,
+        "initial_bounding_box": initial_bbox,
     }
 
-    if frame_bboxes:
-        scene_data["initial_bounding_box"] = frame_bboxes[0]["bounding_box"]
-
-    # ── 6. Save to per-show JSON ─────────────────────────────────────────────
     save_scene(show_id, scene_data)
 
-    # ── 7. Clean up temp frames ──────────────────────────────────────────────
     _cleanup_temp_frames(frames)
 
-    # ── 8. Auto-trigger mask generation ──────────────────────────────────────
     try:
         print(f"[AUTO] Triggering mask generation for: {show_id}...")
         mask_path = generate_mask_video(show_id)
@@ -275,7 +275,6 @@ Respond with ONLY a JSON object:
 
 
 def save_scene(show_id: str, scene_data: dict):
-    """Save scene data to its own JSON file: app/db/data/{show_id}.json"""
     filepath = os.path.join(DATA_DIR, f"{show_id}.json")
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
     with open(filepath, "w") as f:
@@ -284,7 +283,6 @@ def save_scene(show_id: str, scene_data: dict):
 
 
 def load_scene(show_id: str) -> dict:
-    """Load scene data from app/db/data/{show_id}.json"""
     filepath = os.path.join(DATA_DIR, f"{show_id}.json")
     if not os.path.exists(filepath):
         return None
@@ -293,13 +291,11 @@ def load_scene(show_id: str) -> dict:
 
 
 def _cleanup_temp_frames(frames: list):
-    """Remove temporary extracted frame images."""
     for _, _, path in frames:
         try:
             os.remove(path)
         except OSError:
             pass
-    # Try to remove the temp dir if empty
     temp_dir = os.path.join("assets", "temp_frames")
     try:
         os.rmdir(temp_dir)
