@@ -1,7 +1,10 @@
 from fastapi import FastAPI
 from config import settings
+from routes import ingestion_routes
 
 app = FastAPI()
+app.include_router(ingestion_routes.router)
+
 
 @app.get("/")
 async def root():
