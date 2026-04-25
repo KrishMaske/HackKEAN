@@ -1,16 +1,27 @@
+"""
+mask_routes.py
+──────────────
+FastAPI routes for mask generation services.
+"""
+
 import os
 import shutil
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
-from app.services.masking import generate_temporal_alpha_masks, mask_status
+
+# We import both functionalities to support both Krish's and Vedant's tasks
+from app.services.masking import generate_temporal_alpha_masks, mask_status, generate_mask_video
 
 router = APIRouter(prefix="/generate", tags=["mask"])
 MASKS_DIR = "assets/masks"
 os.makedirs(MASKS_DIR, exist_ok=True)
 
 
-@router.post("/mask/{show_id}")
-async def generate_mask(
+# ─────────────────────────────────────────────────────────────────────────────
+# POST /generate/mask/temporal/{show_id} — generate temporal alpha mask sequence
+# ─────────────────────────────────────────────────────────────────────────────
+@router.post("/mask/temporal/{show_id}")
+async def generate_temporal_mask(
     show_id: str,
     manual_mask: UploadFile = File(None),
     anchor_frame: int = Form(0),
@@ -50,12 +61,38 @@ async def generate_mask(
             os.remove(temp_mask_path)
 
 
-@router.get("/mask/{show_id}/status", tags=["mask"])
-async def mask_generation_status(show_id: str):
-    status = mask_status(show_id)
-    return {"success": True, "status": status}
+# ─────────────────────────────────────────────────────────────────────────────
+# POST /generate/mask/bw/{show_id}   — generate (or regenerate) the B&W mask video
+# ─────────────────────────────────────────────────────────────────────────────
+@router.post("/mask/bw/{show_id}")
+async def generate_bw_mask(show_id: str):
+    """
+    Reads the bounding-box data stored in scene_vault.json for *show_id*,
+    renders a per-frame black-and-white mask video, and returns its location.
+    """
+    try:
+        output_path = generate_mask_video(show_id)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    filename = os.path.basename(output_path)
+
+    return {
+        "show_id":       show_id,
+        "status":        "success",
+        "mask_filename": filename,
+        "mask_path":     output_path,
+        "preview_url":   f"/masks/{show_id}",
+    }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# GET /masks/{show_id}/download   — stream the mask MP4
+# ─────────────────────────────────────────────────────────────────────────────
 @router.get("/mask/{show_id}/download", tags=["mask"])
 async def download_mask(show_id: str):
     """Stream the pre-generated mask MP4 as a binary response."""
@@ -66,7 +103,7 @@ async def download_mask(show_id: str):
             status_code=404,
             detail=(
                 f"No mask found for show_id='{show_id}'. "
-                "Call POST /generate/mask/{show_id} first."
+                "Call POST /generate/mask/bw/{show_id} or /mask/temporal/{show_id} first."
             ),
         )
 
@@ -75,3 +112,31 @@ async def download_mask(show_id: str):
         media_type="video/x-msvideo",
         filename=f"{show_id}_mask.avi",
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GET /generate/mask/{show_id}/status   — non-destructive existence check
+# ─────────────────────────────────────────────────────────────────────────────
+@router.get("/mask/{show_id}/status", tags=["mask"])
+async def get_mask_status(show_id: str):
+    """
+    Returns whether a mask video for *show_id* already exists on disk,
+    along with its file size (bytes) if present.
+    """
+    try:
+        # Krish's original status call
+        status_msg = mask_status(show_id)
+    except Exception:
+        status_msg = "Unknown"
+
+    mask_path = os.path.join(MASKS_DIR, f"{show_id}_mask.avi")
+    exists    = os.path.exists(mask_path)
+
+    return {
+        "success": True,
+        "status_message": status_msg,
+        "show_id":  show_id,
+        "exists":   exists,
+        "path":     mask_path if exists else None,
+        "size_bytes": os.path.getsize(mask_path) if exists else None,
+    }
