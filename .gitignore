@@ -1,3 +1,4 @@
 .env
 .venv
 leaks-report.json
+__pycache__
