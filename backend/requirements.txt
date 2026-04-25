@@ -32,6 +32,7 @@ numpy==2.4.4
 packaging==26.2
 pandas==3.0.2
 pillow==12.2.0
+opencv-python==4.9.0.100
 protobuf==7.34.1
 pyarrow==24.0.0
 pyasn1==0.6.3
