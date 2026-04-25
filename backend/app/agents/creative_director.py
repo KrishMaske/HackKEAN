@@ -1,7 +1,7 @@
 
 from typing import List, Optional
-from config import settings
-from schemas import AgentState
+from app.core.config import settings
+from app.db.schemas import AgentState
 
 # Task 1.5: Create the Creative Director Agent Node
 def creative_director_agent(state: AgentState) -> AgentState:

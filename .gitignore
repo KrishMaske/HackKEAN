@@ -3,6 +3,8 @@ backend/venv/
 __pycache__/
 *.pyc
 .env
+leaks-report.json
+.venv
 
 # Node / Next.js
 frontend/node_modules/

@@ -1,10 +1,10 @@
 from langgraph.graph import StateGraph, END
-from schemas import AgentState
-from agents.creative_director import creative_director_agent
-from agents.historian import historian_agent
-from agents.cinematographer import cinematographer_agent
-from database import get_historical_context
-from tools.vision_tools import trigger_visual_generation
+from app.db.schemas import AgentState
+from app.agents.creative_director import creative_director_agent
+from app.agents.historian import historian_agent
+from app.agents.cinematographer import cinematographer_agent
+from app.db.database import get_historical_context
+from app.tools.vision_tools import trigger_visual_generation
 
 def create_scene_shift_workflow():
     workflow = StateGraph(AgentState)

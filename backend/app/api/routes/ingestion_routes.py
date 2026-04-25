@@ -1,7 +1,7 @@
 import os
 import shutil
 from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, UploadFile, File
-from utils import ingestion_pipeline
+from app.services import ingestion as ingestion_pipeline
 
 router = APIRouter()
 

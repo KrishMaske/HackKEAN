@@ -1,9 +1,8 @@
-# backend/database.py
 from motor.motor_asyncio import AsyncIOMotorClient
-from config import settings
+from app.core.config import settings
 
 # MongoDB Connection
-client = AsyncIOMotorClient(settings.mongodb_uri) # Ensure this is in your config/settings
+client = AsyncIOMotorClient(settings.mongodb_uri)
 db = client.sceneshift_db
 scene_vault = db.scene_vault
 
@@ -44,20 +43,15 @@ async def seed_db():
     await scene_vault.insert_many(DEMO_SCENES)
     print("Database Seeded Successfully!")
 
-
 async def get_historical_context(scene_id: str) -> dict:
     """
     Query the scene vault to get historical context for a given scene_id.
-    
-    Returns a dictionary with year, forbidden_tech, vibe, location, and show_name
-    that can be used to populate the AgentState's historical_context field.
     """
     scene = await scene_vault.find_one({"scene_id": scene_id})
     
     if not scene:
         return {}
     
-    # Transform DB fields to match what agents expect
     return {
         "year": scene.get("year"),
         "forbidden_tech": scene.get("forbidden_tech", []),

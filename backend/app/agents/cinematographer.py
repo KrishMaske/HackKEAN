@@ -1,7 +1,7 @@
 # backend/agents/cinematographer.py
-from schemas import AgentState
-from config import settings
-from tools.vision_tools import trigger_visual_generation
+from app.db.schemas import AgentState
+from app.core.config import settings
+from app.tools.vision_tools import trigger_visual_generation
 
 async def cinematographer_agent(state: AgentState) -> AgentState:
     """

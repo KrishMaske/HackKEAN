@@ -1,6 +1,6 @@
 from typing import List, Optional
-from config import settings
-from schemas import AgentState
+from app.core.config import settings
+from app.db.schemas import AgentState
 
 # Task 1.4: Create the Historian Agent Node
 def historian_agent(state: AgentState) -> AgentState:
