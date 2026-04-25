@@ -20,7 +20,7 @@ def creative_director_agent(state: AgentState) -> AgentState:
     show_name = historical_context.get("show_name", "the show")
     
     if not user_interest:
-        state["reasoning_log"].append("Creative Director Agent: No user interest provided")
+        state["reasoning_log"].append({"agent": "Creative Director", "action": "Error", "message": "No user interest provided"})
         return state
     
     # Build the creative prompt for Gemma 4
@@ -79,8 +79,8 @@ Do not include any other text or explanation."""
     state["proposed_objects"] = proposed_objects
     
     # Append reasoning to reasoning_log
-    reasoning = f"Creative Director Agent: Selected '{proposed_objects[0]}', '{proposed_objects[1]}', and '{proposed_objects[2]}' to bridge viewer demographic ({user_interest}) with {show_name}'s {vibe} aesthetic at {location}"
-    state["reasoning_log"].append(reasoning)
-    state["reasoning_log"].append(f"Creative Director Agent: Gemma 4 response: {gemma_response}")
+    reasoning = f"Selected '{proposed_objects[0]}', '{proposed_objects[1]}', and '{proposed_objects[2]}' to bridge viewer demographic ({user_interest}) with {show_name}'s {vibe} aesthetic at {location}"
+    state["reasoning_log"].append({"agent": "Creative Director", "action": "Proposal", "message": reasoning})
+    state["reasoning_log"].append({"agent": "Creative Director", "action": "LLM Response", "message": f"Gemma 4 response: {gemma_response}"})
     
     return state

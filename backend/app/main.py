@@ -69,7 +69,8 @@ async def generate_scene(request: GenerateSceneRequest, guardrails: bool = True)
         return {
             "success": True,
             "final_selection": result.get("final_selection"),
-            "reasoning_log": result.get("reasoning_log", [])
+            "reasoning_log": result.get("reasoning_log", []),
+            "audio_specs": result.get("audio_specs", {})
         }
     except Exception as e:
         return {"success": False, "error": str(e)}

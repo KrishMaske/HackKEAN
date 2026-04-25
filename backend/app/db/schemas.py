@@ -9,5 +9,6 @@ class AgentState(TypedDict):
     final_selection: Optional[str]
     selected_object: str          # Added to match orchestrator initialization
     visual_specs: dict
-    reasoning_log: List[str]
+    audio_specs: dict
+    reasoning_log: List[dict]
     guardrails_enabled: bool      # Added for Task 5.1

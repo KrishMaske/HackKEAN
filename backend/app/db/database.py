@@ -15,7 +15,9 @@ DEMO_SCENES = [
         "location": "Hawkins, IN",
         "forbidden_tech": ["Cellphones", "Internet", "Laptops", "CDs"],
         "vibe": "Nostalgic/Gritty",
-        "lighting": "Warm incandescent"
+        "lighting": "Warm incandescent",
+        "video_path": "assets/input/STRANGER_THINGS_CLIP.mp4",
+        "coordinate_map": [100, 100, 300, 300]
     },
     {
         "scene_id": "the_office_05",
@@ -24,7 +26,9 @@ DEMO_SCENES = [
         "location": "Scranton, PA",
         "forbidden_tech": ["iPhone", "Streaming", "USB-C"],
         "vibe": "Corporate/Flat",
-        "lighting": "Cool fluorescent"
+        "lighting": "Cool fluorescent",
+        "video_path": "assets/input/OFFICE_CLIP.mp4",
+        "coordinate_map": [150, 150, 250, 250]
     },
     {
         "scene_id": "succession_20",
@@ -33,7 +37,9 @@ DEMO_SCENES = [
         "location": "NYC",
         "forbidden_tech": ["Generative AI", "Vision Pro"],
         "vibe": "Ultra-Luxury/Cold",
-        "lighting": "Natural window light"
+        "lighting": "Natural window light",
+        "video_path": "",
+        "coordinate_map": [0, 0, 0, 0]
     }
 ]
 

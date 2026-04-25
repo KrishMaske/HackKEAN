@@ -34,10 +34,10 @@ async def cinematographer_agent(state: AgentState) -> AgentState:
         clean_json = response.text.strip().replace("```json", "").replace("```", "")
         specs = json.loads(clean_json)
         state["visual_specs"] = specs
-        state["reasoning_log"].append(f"Cinematographer Agent: Applied {specs['material_type']} physics for {lighting_context} environment.")
+        state["reasoning_log"].append({"agent": "Cinematographer", "action": "Physics Generation", "message": f"Applied {specs['material_type']} physics for {lighting_context} environment."})
     except:
         state["visual_specs"] = {"material_type": "matte", "lighting_intensity": 0.5}
-        state["reasoning_log"].append("Cinematographer Agent: Failed to parse specs, used matte fallback.")
+        state["reasoning_log"].append({"agent": "Cinematographer", "action": "Fallback", "message": "Failed to parse specs, used matte fallback."})
 
     # Trigger the physical world generation
     vision_result = await trigger_visual_generation(
@@ -46,5 +46,5 @@ async def cinematographer_agent(state: AgentState) -> AgentState:
         scene_id=state["scene_id"]
     )
     
-    state["reasoning_log"].append(f"Vision Pipeline: {vision_result['status']} (Job: {vision_result.get('job_id')})")
+    state["reasoning_log"].append({"agent": "Vision Pipeline", "action": "Trigger", "message": f"{vision_result['status']} (Job: {vision_result.get('job_id')})"})
     return state
