@@ -1,8 +1,8 @@
 {
     "show_id": "string",
     "filepath": "assets/uploads/cocacola_strangerthings.mp4",
-    "production_year": 1999,
-    "location": "Laboratory",
+    "production_year": 1970,
+    "location": "Psychiatric Ward",
     "target_object": "coca cola can",
     "video_width": 1920,
     "video_height": 1080,
@@ -12,6 +12,6 @@
         919,
         724,
         1000,
-        892
+        884
     ]
 }

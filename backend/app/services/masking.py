@@ -398,16 +398,11 @@ def render_mask_video(alpha_dir: str, output_path: str, fps: float, width: int, 
     if not frame_files:
         raise FileNotFoundError("No alpha masks found to render into video.")
 
-    fourcc = cv2.VideoWriter_fourcc(*"avc1")
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height), isColor=False)
 
     if not writer.isOpened():
-        # Fallback to XVID .avi if H264 codec not available
-        output_path = output_path.replace(".mp4", ".avi")
-        fourcc = cv2.VideoWriter_fourcc(*"XVID")
-        writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height), isColor=False)
-        if not writer.isOpened():
-            raise IOError(f"Unable to open VideoWriter for {output_path}")
+        raise IOError(f"Unable to open VideoWriter for {output_path}")
 
     for frame_file in frame_files:
         mask_img = cv2.imread(str(frame_file), cv2.IMREAD_GRAYSCALE)
@@ -425,16 +420,11 @@ def render_overlay_video(frames: List[np.ndarray], masks: List[np.ndarray], outp
     if cv2 is None:
         return
 
-    fourcc = cv2.VideoWriter_fourcc(*"avc1")
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height), isColor=True)
 
     if not writer.isOpened():
-        # Fallback to XVID .avi if H264 codec not available
-        output_path = output_path.replace(".mp4", ".avi")
-        fourcc = cv2.VideoWriter_fourcc(*"XVID")
-        writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height), isColor=True)
-        if not writer.isOpened():
-            raise IOError(f"Unable to open VideoWriter for {output_path}")
+        raise IOError(f"Unable to open VideoWriter for {output_path}")
 
     for frame, mask in zip(frames, masks):
         # Ensure frame and mask match writer dimensions
@@ -458,24 +448,31 @@ def _detect_bbox_with_groq(frame: np.ndarray, product_name: str, frame_width: in
     or None if detection fails.
     """
     try:
-        import base64
+        import base64, json, re
         from app.core.config import settings
 
-        # Encode the frame as JPEG for the API call
-        ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        # Downscale frame for the API call (save tokens)
+        h, w = frame.shape[:2]
+        max_px = 512
+        if max(h, w) > max_px:
+            sc = max_px / max(h, w)
+            small = cv2.resize(frame, (int(w * sc), int(h * sc)), interpolation=cv2.INTER_AREA)
+        else:
+            small = frame
+        ok, buf = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 80])
         if not ok:
             return None
         b64 = base64.b64encode(buf.tobytes()).decode("utf-8")
 
         prompt = (
-            f"You are a precision object detector. This image is {frame_width}x{frame_height} pixels.\n\n"
-            f"Find the '{product_name}' in this image and return its EXACT bounding box in pixel coordinates as a json object.\n\n"
+            f"You are a precision object detector.\n\n"
+            f"Find the '{product_name}' in this image.\n\n"
             f"Rules:\n"
-            f"- x_min and x_max must be between 0 and {frame_width}\n"
-            f"- y_min and y_max must be between 0 and {frame_height}\n"
-            f"- The box must TIGHTLY enclose the product only, not the background\n"
-            f"- If the product is not visible, return null for all values\n\n"
-            f'Respond ONLY with valid json: {{"x_min": int, "y_min": int, "x_max": int, "y_max": int}}'
+            f"- Use NORMALIZED coordinates from 0 to 1000 (NOT pixels).\n"
+            f"- (0,0) is top-left, (1000,1000) is bottom-right.\n"
+            f"- x_max MUST be greater than x_min. y_max MUST be greater than y_min.\n"
+            f"- Set found to true if the object is visible, false if not.\n\n"
+            f'Respond with ONLY valid json: {{"found": bool, "x_min": int, "y_min": int, "x_max": int, "y_max": int}}'
         )
 
         response = settings.groq_client.chat.completions.create(
@@ -493,29 +490,28 @@ def _detect_bbox_with_groq(frame: np.ndarray, product_name: str, frame_width: in
             temperature=0.1,
         )
 
-        import json, re
         raw = response.choices[0].message.content or ""
         raw = re.sub(r"^```(?:json)?\s*", "", raw.strip())
         raw = re.sub(r"\s*```$", "", raw)
         data = json.loads(raw)
 
-        x0 = data.get("x_min")
-        y0 = data.get("y_min")
-        x1 = data.get("x_max")
-        y1 = data.get("y_max")
-
-        if any(v is None for v in [x0, y0, x1, y1]):
-            print("[MASK] Groq returned null bbox — product not found in anchor frame.")
+        if not data.get("found", True):
             return None
 
-        # Clamp to frame boundaries
-        x0 = max(0, min(int(x0), frame_width  - 1))
-        y0 = max(0, min(int(y0), frame_height - 1))
-        x1 = max(0, min(int(x1), frame_width  - 1))
-        y1 = max(0, min(int(y1), frame_height - 1))
+        xn0, yn0, xn1, yn1 = data.get("x_min"), data.get("y_min"), data.get("x_max"), data.get("y_max")
+        if any(v is None for v in [xn0, yn0, xn1, yn1]):
+            return None
+        if xn0 == 0 and yn0 == 0 and xn1 == 0 and yn1 == 0:
+            return None
+
+        # Convert normalized 0-1000 -> pixel coords and clamp
+        x0 = max(0, min(int(xn0 * frame_width  / 1000.0), frame_width  - 1))
+        y0 = max(0, min(int(yn0 * frame_height / 1000.0), frame_height - 1))
+        x1 = max(0, min(int(xn1 * frame_width  / 1000.0), frame_width  - 1))
+        y1 = max(0, min(int(yn1 * frame_height / 1000.0), frame_height - 1))
 
         if x1 <= x0 or y1 <= y0:
-            print(f"[MASK] Groq bbox is degenerate ({x0},{y0},{x1},{y1}) — ignoring.")
+            print(f"[MASK] Groq bbox is degenerate ({x0},{y0},{x1},{y1}) -- ignoring.")
             return None
 
         return [x0, y0, x1, y1]
@@ -523,6 +519,43 @@ def _detect_bbox_with_groq(frame: np.ndarray, product_name: str, frame_width: in
     except Exception as e:
         print(f"[MASK] Groq live bbox detection failed: {e}")
         return None
+
+
+def _detect_keyframe_bboxes(
+    frames: list,
+    fps: float,
+    product_name: str,
+    frame_width: int,
+    frame_height: int,
+    fallback_bbox: list,
+) -> dict:
+    """
+    Detect the product bbox on one frame per second using Groq Vision.
+    Returns a dict mapping frame_index -> [x0, y0, x1, y1] at processing resolution.
+    Frames where detection fails fall back to the provided fallback_bbox.
+    """
+    import time
+    total = len(frames)
+    keyframe_interval = max(1, int(fps))  # 1 keyframe per second
+    keyframe_indices = list(range(0, total, keyframe_interval))
+
+    print(f"[MASK] Detecting product on {len(keyframe_indices)} keyframes (every {keyframe_interval} frames)...")
+
+    keyframe_bboxes = {}
+    for i, kf_idx in enumerate(keyframe_indices):
+        bbox = _detect_bbox_with_groq(frames[kf_idx], product_name, frame_width, frame_height)
+        if bbox:
+            keyframe_bboxes[kf_idx] = bbox
+            print(f"[MASK]   Keyframe {kf_idx}: {bbox}")
+        else:
+            keyframe_bboxes[kf_idx] = fallback_bbox
+            print(f"[MASK]   Keyframe {kf_idx}: product not found, using fallback {fallback_bbox}")
+
+        # Small delay between API calls to avoid rate limits
+        if i < len(keyframe_indices) - 1:
+            time.sleep(0.5)
+
+    return keyframe_bboxes
 
 
 def generate_temporal_alpha_masks(
@@ -581,101 +614,84 @@ def generate_temporal_alpha_masks(
     proc_bbox = [bx0, by0, bx1, by1]  # [x0, y0, x1, y1] at processing resolution
     print(f"[MASK] Using product bbox (proc-res): {proc_bbox}")
 
-    # ── Step 2: Build anchor mask on frame 0 via GrabCut ─────────────────────
-    anchor_frame = frames[anchor_frame_index]
+    # ── Step 2: Detect product bbox on keyframes (1 per second) ────────────────
+    # This gives us ground-truth correction points throughout the video,
+    # eliminating drift and handling scene cuts automatically.
+    BBOX_PAD = 0.30  # 30% padding around each detected bbox for inpainting context
 
-    if manual_mask_path and os.path.exists(manual_mask_path):
-        anchor_mask = load_manual_mask(manual_mask_path, proc_height, proc_width)
-        print("[MASK] Anchor mask loaded from manual path.")
-    else:
-        # Try GrabCut first — tight pixel mask
-        anchor_mask = grabcut_product_mask(anchor_frame, proc_bbox)
-        if anchor_mask is not None and anchor_mask.sum() > 0:
-            print("[MASK] Anchor mask built via GrabCut.")
-        else:
-            # Fall back to simple rectangle
-            print("[MASK] GrabCut returned empty mask — falling back to bbox rectangle.")
-            anchor_mask = bbox_to_mask(proc_bbox, proc_height, proc_width)
+    def _pad_bbox(bbox, pad, w, h):
+        """Add padding around a bbox and clamp to frame bounds."""
+        x0, y0, x1, y1 = bbox
+        bw, bh = x1 - x0, y1 - y0
+        px, py = int(bw * pad), int(bh * pad)
+        return [
+            max(0, x0 - px),
+            max(0, y0 - py),
+            min(w, x1 + px),
+            min(h, y1 + py),
+        ]
 
-    if anchor_mask is None or anchor_mask.sum() == 0:
-        raise ValueError("Unable to build anchor mask. Check bounding box coordinates.")
-
-    # ── Step 3: Track with Lucas-Kanade sparse optical flow ──────────────────
-    # LK tracks feature points (corners) detected INSIDE the bbox on frame 0.
-    # The median displacement of all living points updates the bbox each frame.
-    # Works with base opencv-python (no contrib needed). Robust to moving cameras.
-
-    lk_params = dict(
-        winSize=(21, 21),
-        maxLevel=3,
-        criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.01),
+    keyframe_bboxes = _detect_keyframe_bboxes(
+        frames, fps, prompt_text, proc_width, proc_height, proc_bbox
     )
 
-    # Detect good features to track inside the anchor bbox
-    anchor_gray = cv2.cvtColor(anchor_frame, cv2.COLOR_BGR2GRAY)
-    roi_mask_for_feat = np.zeros_like(anchor_gray)
-    roi_mask_for_feat[by0:by1, bx0:bx1] = 255
+    # Pad all keyframe bboxes
+    padded_keyframes = {}
+    for kf_idx, bbox in keyframe_bboxes.items():
+        padded_keyframes[kf_idx] = _pad_bbox(bbox, BBOX_PAD, proc_width, proc_height)
 
-    init_pts = cv2.goodFeaturesToTrack(
-        anchor_gray, maxCorners=60, qualityLevel=0.05, minDistance=5, mask=roi_mask_for_feat
-    )
+    # Sort keyframe indices for interpolation
+    kf_sorted = sorted(padded_keyframes.keys())
+    print(f"[MASK] {len(kf_sorted)} keyframes with padded bboxes ready.")
 
-    # Fallback: if no features found, use a regular grid inside the bbox
-    if init_pts is None or len(init_pts) == 0:
-        print("[MASK] No good features found — using grid keypoints inside bbox.")
-        xs = np.linspace(bx0 + 2, bx1 - 2, 6, dtype=np.float32)
-        ys = np.linspace(by0 + 2, by1 - 2, 6, dtype=np.float32)
-        gx, gy = np.meshgrid(xs, ys)
-        init_pts = np.stack([gx.ravel(), gy.ravel()], axis=1).reshape(-1, 1, 2)
+    # ── Step 3: Generate masks for every frame ────────────────────────────────
+    # For keyframes: use the Groq-detected (padded) bbox directly.
+    # Between keyframes: interpolate the bbox linearly between the two nearest keyframes.
+    # This is simple, fast, and drift-free since every keyframe resets the position.
 
-    pts  = init_pts.copy()           # tracked points (Nx1x2 float32)
-    prev_gray = anchor_gray.copy()
-    cur_bx0, cur_by0, cur_bx1, cur_by1 = bx0, by0, bx1, by1  # current bbox
+    def _interpolate_bbox(idx, kf_sorted, padded_keyframes):
+        """Linearly interpolate bbox between the two nearest keyframes."""
+        # Find surrounding keyframes
+        prev_kf = kf_sorted[0]
+        next_kf = kf_sorted[-1]
+        for i, kf in enumerate(kf_sorted):
+            if kf >= idx:
+                next_kf = kf
+                prev_kf = kf_sorted[max(0, i - 1)]
+                break
+
+        if prev_kf == next_kf:
+            return padded_keyframes[prev_kf]
+
+        # Linear interpolation factor
+        t = (idx - prev_kf) / max(1, next_kf - prev_kf)
+        b0 = padded_keyframes[prev_kf]
+        b1 = padded_keyframes[next_kf]
+        return [
+            int(b0[0] + (b1[0] - b0[0]) * t),
+            int(b0[1] + (b1[1] - b0[1]) * t),
+            int(b0[2] + (b1[2] - b0[2]) * t),
+            int(b0[3] + (b1[3] - b0[3]) * t),
+        ]
 
     masks = [None] * len(frames)
-    masks[anchor_frame_index] = anchor_mask
-
     total_frames = len(frames)
-    for idx in range(anchor_frame_index + 1, total_frames):
-        if idx % 30 == 0:
-            print(f"[MASK] Tracking frame {idx}/{total_frames}...")
 
-        curr_gray = cv2.cvtColor(frames[idx], cv2.COLOR_BGR2GRAY)
+    for idx in range(total_frames):
+        if idx % 50 == 0:
+            print(f"[MASK] Generating mask {idx}/{total_frames}...")
 
-        if pts is not None and len(pts) >= 3:
-            new_pts, status, _ = cv2.calcOpticalFlowPyrLK(
-                prev_gray, curr_gray, pts, None, **lk_params
-            )
-            good_new = new_pts[status.ravel() == 1]
-            good_old = pts[status.ravel() == 1]
+        bbox = _interpolate_bbox(idx, kf_sorted, padded_keyframes)
+        # Clamp
+        bbox[0] = max(0, bbox[0])
+        bbox[1] = max(0, bbox[1])
+        bbox[2] = min(proc_width,  bbox[2])
+        bbox[3] = min(proc_height, bbox[3])
 
-            if len(good_new) >= 3:
-                # Compute median displacement of tracked points
-                dx = float(np.median(good_new[:, 0, 0] - good_old[:, 0, 0]))
-                dy = float(np.median(good_new[:, 0, 1] - good_old[:, 0, 1]))
-
-                # Translate bbox by the median displacement
-                cur_bx0 = max(0, min(int(cur_bx0 + dx), proc_width  - 1))
-                cur_by0 = max(0, min(int(cur_by0 + dy), proc_height - 1))
-                cur_bx1 = max(0, min(int(cur_bx1 + dx), proc_width  - 1))
-                cur_by1 = max(0, min(int(cur_by1 + dy), proc_height - 1))
-
-                if cur_bx1 > cur_bx0 and cur_by1 > cur_by0:
-                    masks[idx] = bbox_to_mask([cur_bx0, cur_by0, cur_bx1, cur_by1], proc_height, proc_width)
-                else:
-                    masks[idx] = np.zeros((proc_height, proc_width), dtype=np.uint8)
-
-                pts = good_new.reshape(-1, 1, 2)
-            else:
-                # Too few points survived — use last known bbox
-                print(f"[MASK] LK lost tracking at frame {idx} — holding last bbox.")
-                masks[idx] = bbox_to_mask([cur_bx0, cur_by0, cur_bx1, cur_by1], proc_height, proc_width)
-                pts = None  # stop trying to track
+        if bbox[2] > bbox[0] and bbox[3] > bbox[1]:
+            masks[idx] = bbox_to_mask(bbox, proc_height, proc_width)
         else:
-            # No points — hold last known bbox
-            masks[idx] = bbox_to_mask([cur_bx0, cur_by0, cur_bx1, cur_by1], proc_height, proc_width)
-
-        prev_gray = curr_gray
+            masks[idx] = np.zeros((proc_height, proc_width), dtype=np.uint8)
 
     # Upscale masks from processing resolution back to original resolution
     output_masks = []
