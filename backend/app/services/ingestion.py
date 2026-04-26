@@ -71,9 +71,23 @@ def _extract_keyframes(video_path: str, num_frames: int = 1) -> list:
     return extracted, width, height, fps, total_frames
 
 
-def _image_to_base64(image_path: str) -> str:
-    with open(image_path, "rb") as f:
-        return base64.b64encode(f.read()).decode("utf-8")
+def _image_to_base64(image_path: str, max_size: int = 512) -> str:
+    """
+    Reads an image, downscales it to max_size to prevent hitting Groq's 7,000 TPM 
+    (Tokens Per Minute) limit on the free tier, and returns it as a base64 string.
+    """
+    img = cv2.imread(image_path)
+    if img is None:
+        raise ValueError(f"Could not read image: {image_path}")
+        
+    h, w = img.shape[:2]
+    if max(h, w) > max_size:
+        scale = max_size / max(h, w)
+        img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+        
+    # Encode as JPEG with high compression to further reduce payload size
+    _, buffer = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    return base64.b64encode(buffer).decode("utf-8")
 
 
 def _detect_object_in_first_frame(client, first_frame_path: str, width: int, height: int) -> str:
@@ -85,11 +99,14 @@ def _detect_object_in_first_frame(client, first_frame_path: str, width: int, hei
 
     prompt = f"""You are an object detection system. This image is {width}x{height} pixels.
 
-Identify the ONE most prominent, inanimate, trackable object in this scene.
-Pick something that is clearly visible and likely to remain in frame across multiple shots
-(e.g. a cup, lamp, phone, bucket, poster, furniture piece, etc).
+Identify the ONE most prominent, inanimate, foreground PRODUCT or ITEM in this scene.
+Prioritize things like branded food, drinks, electronics, or handheld objects.
 
-Respond with ONLY the object name in lowercase, nothing else.
+CRITICAL RULES:
+1. DO NOT select large background elements or furniture (e.g., tables, chairs, floors, walls, curtains).
+2. Pick a specific, trackable item (e.g., "coca cola can", "kfc bucket", "coffee mug", "laptop").
+3. Respond with ONLY the object name in lowercase, nothing else.
+
 Example: "kfc bucket" or "coca cola can"
 """
     for attempt in range(3):
@@ -128,6 +145,7 @@ Example: "kfc bucket" or "coca cola can"
 def _detect_initial_bbox(client, target_object: str, frame_path: str, width: int, height: int) -> list:
     """
     Uses Groq Vision to get the anchor bounding box on Frame 0.
+    Uses normalized 0-1000 coordinates since the image is downscaled before sending.
     """
     base64_image = _image_to_base64(frame_path)
 
@@ -137,8 +155,9 @@ Find the object "{target_object}" in this image and return its TIGHT bounding bo
 
 CRITICAL RULES:
 - The bounding box must TIGHTLY enclose the object — not the general area.
-- Use ACTUAL pixel coordinates for {width}x{height}, NOT normalized 0-1000 values.
-- x_min/x_max range: 0 to {width}. y_min/y_max range: 0 to {height}.
+- Use NORMALIZED coordinates from 0 to 1000.
+- (0,0) is top-left, (1000, 1000) is bottom-right.
+- If the object is NOT visible, return null values.
 
 Respond with ONLY a JSON object:
 {{"x_min": int, "y_min": int, "x_max": int, "y_max": int}}
@@ -167,14 +186,20 @@ Respond with ONLY a JSON object:
             content = response.choices[0].message.content
             if content:
                 bbox_data = _parse_json_response(content)
-                bbox = [
-                    bbox_data.get("x_min"),
-                    bbox_data.get("y_min"),
-                    bbox_data.get("x_max"),
-                    bbox_data.get("y_max"),
-                ]
-                print(f"[INGEST] Initial Anchor BBox from Groq: {bbox}")
-                return bbox
+                if bbox_data.get("x_min") is not None and bbox_data.get("x_max") is not None:
+                    # Convert normalized 0-1000 → pixel coordinates and clamp to frame bounds
+                    bbox = [
+                        max(0, min(int(bbox_data["x_min"] * width / 1000.0), width - 1)),
+                        max(0, min(int(bbox_data["y_min"] * height / 1000.0), height - 1)),
+                        max(0, min(int(bbox_data["x_max"] * width / 1000.0), width - 1)),
+                        max(0, min(int(bbox_data["y_max"] * height / 1000.0), height - 1)),
+                    ]
+                    if bbox[2] > bbox[0] and bbox[3] > bbox[1]:
+                        print(f"[INGEST] Initial Anchor BBox from Groq: {bbox}")
+                        return bbox
+                    else:
+                        print(f"[WARN] Groq returned degenerate bbox after conversion: {bbox}")
+                        continue
         except Exception as e:
             if "429" in str(e) or "rate limit" in str(e).lower():
                 print(f"[WARN] Initial bbox detection rate limited. Waiting 60s...")

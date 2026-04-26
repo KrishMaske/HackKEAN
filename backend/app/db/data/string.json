@@ -1,17 +1,17 @@
 {
     "show_id": "string",
-    "filepath": "assets/uploads/COCA_COLA_STRANGER_THINGS.mp4",
-    "production_year": 1985,
-    "location": "Research Facility",
+    "filepath": "assets/uploads/cocacola_strangerthings.mp4",
+    "production_year": 1999,
+    "location": "Laboratory",
     "target_object": "coca cola can",
     "video_width": 1920,
     "video_height": 1080,
     "video_fps": 30.0,
     "total_frames": 248,
     "initial_bounding_box": [
-        528,
-        627,
-        608,
-        805
+        919,
+        724,
+        1000,
+        892
     ]
 }

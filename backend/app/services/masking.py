@@ -133,7 +133,7 @@ def bbox_to_mask(bbox, frame_height: int, frame_width: int) -> np.ndarray:
 # ── Thresholds (tune here) ────────────────────────────────────────────────────
 MIN_MASK_PIXELS     = 80    # mask with fewer active pixels is treated as "lost"
 CUT_THRESHOLD       = 0.50  # histogram correlation below this → hard scene cut
-APPEARANCE_THRESH   = 0.35  # colour similarity below this → mask drifted to wrong object
+APPEARANCE_THRESH   = 0.15  # colour similarity below this → mask drifted to wrong object (loosened for orange/red products)
 BLACK_ROW_THRESH    = 12    # rows/cols with mean brightness below this are letterbox bars
 
 
@@ -377,8 +377,9 @@ def remove_skin_tones(mask: np.ndarray, frame: np.ndarray) -> np.ndarray:
     overlap = int((mask & skin_mask).sum() / 255)
     skin_fraction = overlap / mask_pixels
 
-    if skin_fraction > 0.60:
-        # More than 60% of what we're tracking is skin — it's a person, not a product
+    if skin_fraction > 0.85:
+        # More than 85% of what we're tracking is skin — it's a person, not a product
+        # (threshold loosened from 60% because red/orange products overlap with skin HSV range)
         return np.zeros_like(mask)
 
     # Otherwise just remove the overlapping skin pixels
@@ -397,16 +398,24 @@ def render_mask_video(alpha_dir: str, output_path: str, fps: float, width: int, 
     if not frame_files:
         raise FileNotFoundError("No alpha masks found to render into video.")
 
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    fourcc = cv2.VideoWriter_fourcc(*"avc1")
     writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height), isColor=False)
 
     if not writer.isOpened():
-        raise IOError(f"Unable to open VideoWriter for {output_path}")
+        # Fallback to XVID .avi if H264 codec not available
+        output_path = output_path.replace(".mp4", ".avi")
+        fourcc = cv2.VideoWriter_fourcc(*"XVID")
+        writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height), isColor=False)
+        if not writer.isOpened():
+            raise IOError(f"Unable to open VideoWriter for {output_path}")
 
     for frame_file in frame_files:
         mask_img = cv2.imread(str(frame_file), cv2.IMREAD_GRAYSCALE)
         if mask_img is None:
             raise IOError(f"Unable to read mask frame: {frame_file}")
+        # Ensure frame matches writer dimensions exactly
+        if mask_img.shape[:2] != (height, width):
+            mask_img = cv2.resize(mask_img, (width, height), interpolation=cv2.INTER_NEAREST)
         writer.write(mask_img)
 
     writer.release()
@@ -416,13 +425,23 @@ def render_overlay_video(frames: List[np.ndarray], masks: List[np.ndarray], outp
     if cv2 is None:
         return
 
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    fourcc = cv2.VideoWriter_fourcc(*"avc1")
     writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height), isColor=True)
 
     if not writer.isOpened():
-        raise IOError(f"Unable to open VideoWriter for {output_path}")
+        # Fallback to XVID .avi if H264 codec not available
+        output_path = output_path.replace(".mp4", ".avi")
+        fourcc = cv2.VideoWriter_fourcc(*"XVID")
+        writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height), isColor=True)
+        if not writer.isOpened():
+            raise IOError(f"Unable to open VideoWriter for {output_path}")
 
     for frame, mask in zip(frames, masks):
+        # Ensure frame and mask match writer dimensions
+        if frame.shape[1] != width or frame.shape[0] != height:
+            frame = cv2.resize(frame, (width, height))
+        if mask.shape[1] != width or mask.shape[0] != height:
+            mask = cv2.resize(mask, (width, height), interpolation=cv2.INTER_NEAREST)
         overlay = frame.copy()
         # Apply a semi-transparent green overlay where the mask is active
         overlay[mask == 255] = [0, 255, 0] # BGR green
@@ -450,13 +469,13 @@ def _detect_bbox_with_groq(frame: np.ndarray, product_name: str, frame_width: in
 
         prompt = (
             f"You are a precision object detector. This image is {frame_width}x{frame_height} pixels.\n\n"
-            f"Find the '{product_name}' in this image and return its EXACT bounding box in pixel coordinates.\n\n"
+            f"Find the '{product_name}' in this image and return its EXACT bounding box in pixel coordinates as a json object.\n\n"
             f"Rules:\n"
             f"- x_min and x_max must be between 0 and {frame_width}\n"
             f"- y_min and y_max must be between 0 and {frame_height}\n"
             f"- The box must TIGHTLY enclose the product only, not the background\n"
             f"- If the product is not visible, return null for all values\n\n"
-            f'Respond ONLY with: {{"x_min": int, "y_min": int, "x_max": int, "y_max": int}}'
+            f'Respond ONLY with valid json: {{"x_min": int, "y_min": int, "x_max": int, "y_max": int}}'
         )
 
         response = settings.groq_client.chat.completions.create(
@@ -527,139 +546,155 @@ def generate_temporal_alpha_masks(
     if anchor_frame_index < 0 or anchor_frame_index >= len(frames):
         raise ValueError("anchor_frame_index must be within the video frame count.")
 
-    alpha_dir         = ensure_output_dirs(show_id)
-    mask_video_path   = os.path.join(MASKS_DIR, f"{show_id}_mask.mp4")
+    alpha_dir          = ensure_output_dirs(show_id)
+    mask_video_path    = os.path.join(MASKS_DIR, f"{show_id}_mask.mp4")
     preview_video_path = os.path.join(MASKS_DIR, f"{show_id}_preview.mp4")
 
-    prompt_text  = prompt or scene.get("target_object") or "the object marked by the provided mask"
+    prompt_text   = prompt or scene.get("target_object") or "the object marked by the provided mask"
     sam_processor = initialize_sam_processor()
 
+    # ── Step 1: Resolve the initial bounding box ─────────────────────────────
+    # Use the stored bbox from ingestion (already validated and clamped to frame bounds).
+    # Re-map from original resolution → processing resolution.
+    stored_bbox = scene.get("initial_bounding_box")
+    if not stored_bbox or len(stored_bbox) != 4 or any(v is None for v in stored_bbox):
+        raise ValueError("Valid initial_bounding_box is required in scene metadata. Re-ingest the video.")
+
+    sx0, sy0, sx1, sy1 = stored_bbox
+    # Remap to processing resolution and clamp
+    bx0 = max(0, min(int(sx0 / scale_x), proc_width  - 1))
+    by0 = max(0, min(int(sy0 / scale_y), proc_height - 1))
+    bx1 = max(0, min(int(sx1 / scale_x), proc_width  - 1))
+    by1 = max(0, min(int(sy1 / scale_y), proc_height - 1))
+
+    if bx1 <= bx0 or by1 <= by0:
+        # Stored bbox is out-of-bounds for this processing resolution — use raw clamped
+        bx0 = max(0, min(int(sx0), proc_width  - 1))
+        by0 = max(0, min(int(sy0), proc_height - 1))
+        bx1 = max(0, min(int(sx1), proc_width  - 1))
+        by1 = max(0, min(int(sy1), proc_height - 1))
+        print(f"[MASK] Stored bbox remapped degenerate, using clamped raw: [{bx0},{by0},{bx1},{by1}]")
+
+    if bx1 <= bx0 or by1 <= by0:
+        raise ValueError(f"Bounding box [{sx0},{sy0},{sx1},{sy1}] is completely out of range for this video. Re-ingest.")
+
+    proc_bbox = [bx0, by0, bx1, by1]  # [x0, y0, x1, y1] at processing resolution
+    print(f"[MASK] Using product bbox (proc-res): {proc_bbox}")
+
+    # ── Step 2: Build anchor mask on frame 0 via GrabCut ─────────────────────
     anchor_frame = frames[anchor_frame_index]
+
     if manual_mask_path and os.path.exists(manual_mask_path):
         anchor_mask = load_manual_mask(manual_mask_path, proc_height, proc_width)
+        print("[MASK] Anchor mask loaded from manual path.")
     else:
-        # ── Step 1: get bounding box ─────────────────────────────────────────
-        # Always re-detect fresh from the anchor frame using Groq Vision.
-        # The stored initial_bounding_box from ingestion is often stale or has
-        # wrong coordinates, so we re-query every time masking runs.
-        stored_bbox = scene.get("initial_bounding_box")
-        fresh_bbox  = _detect_bbox_with_groq(anchor_frame, prompt_text, proc_width, proc_height)
-
-        if fresh_bbox:
-            initial_bbox = fresh_bbox
-            print(f"[MASK] Fresh Groq bbox: {initial_bbox}")
-        elif stored_bbox and all(v is not None for v in stored_bbox):
-            # Remap stored bbox from original → processing resolution
-            x0, y0, x1, y1 = stored_bbox
-            initial_bbox = [
-                int(x0 / scale_x), int(y0 / scale_y),
-                int(x1 / scale_x), int(y1 / scale_y),
-            ]
-            print(f"[MASK] Falling back to stored bbox (remapped): {initial_bbox}")
+        # Try GrabCut first — tight pixel mask
+        anchor_mask = grabcut_product_mask(anchor_frame, proc_bbox)
+        if anchor_mask is not None and anchor_mask.sum() > 0:
+            print("[MASK] Anchor mask built via GrabCut.")
         else:
-            initial_bbox = None
-            print("[MASK] No bounding box available.")
+            # Fall back to simple rectangle
+            print("[MASK] GrabCut returned empty mask — falling back to bbox rectangle.")
+            anchor_mask = bbox_to_mask(proc_bbox, proc_height, proc_width)
 
-        # ── Step 2: build anchor mask ────────────────────────────────────────
-        print(f"[MASK] Building anchor mask for product: '{prompt_text}'")
-        anchor_mask = None
+    if anchor_mask is None or anchor_mask.sum() == 0:
+        raise ValueError("Unable to build anchor mask. Check bounding box coordinates.")
 
-        # 1st attempt: GrabCut — tight pixel-accurate product mask
-        if initial_bbox:
-            gc_mask = grabcut_product_mask(anchor_frame, initial_bbox)
-            if gc_mask is not None:
-                anchor_mask = gc_mask
-                print("[MASK] Anchor mask built via GrabCut.")
+    # ── Step 3: Track with Lucas-Kanade sparse optical flow ──────────────────
+    # LK tracks feature points (corners) detected INSIDE the bbox on frame 0.
+    # The median displacement of all living points updates the bbox each frame.
+    # Works with base opencv-python (no contrib needed). Robust to moving cameras.
 
-        # 2nd attempt: SAM3 (if available)
-        if anchor_mask is None:
-            sam_mask = sam_mask_from_prompt(sam_processor, anchor_frame, prompt_text, bbox=initial_bbox)
-            if sam_mask is not None and sam_mask.sum() > 0:
-                anchor_mask = sam_mask
-                print("[MASK] Anchor mask built via SAM3.")
+    lk_params = dict(
+        winSize=(21, 21),
+        maxLevel=3,
+        criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.01),
+    )
 
-        # Last resort: simple bounding box rectangle
-        if anchor_mask is None and initial_bbox:
-            print("[MASK] Falling back to bounding box rectangle.")
-            anchor_mask = bbox_to_mask(initial_bbox, proc_height, proc_width)
+    # Detect good features to track inside the anchor bbox
+    anchor_gray = cv2.cvtColor(anchor_frame, cv2.COLOR_BGR2GRAY)
+    roi_mask_for_feat = np.zeros_like(anchor_gray)
+    roi_mask_for_feat[by0:by1, bx0:bx1] = 255
 
-        if anchor_mask is None or anchor_mask.sum() == 0:
-            raise ValueError("Unable to build anchor mask — check bounding box coordinates.")
+    init_pts = cv2.goodFeaturesToTrack(
+        anchor_gray, maxCorners=60, qualityLevel=0.05, minDistance=5, mask=roi_mask_for_feat
+    )
 
+    # Fallback: if no features found, use a regular grid inside the bbox
+    if init_pts is None or len(init_pts) == 0:
+        print("[MASK] No good features found — using grid keypoints inside bbox.")
+        xs = np.linspace(bx0 + 2, bx1 - 2, 6, dtype=np.float32)
+        ys = np.linspace(by0 + 2, by1 - 2, 6, dtype=np.float32)
+        gx, gy = np.meshgrid(xs, ys)
+        init_pts = np.stack([gx.ravel(), gy.ravel()], axis=1).reshape(-1, 1, 2)
 
-    # Strip skin from anchor mask right away (in case GrabCut included hands, etc.)
-    anchor_mask = remove_skin_tones(anchor_mask, anchor_frame)
-    anchor_mask = apply_letterbox_exclusion(anchor_mask, anchor_frame)
-
-    # Pre-compute the anchor product's colour fingerprint for appearance matching
-    anchor_hist = _masked_histogram(anchor_frame, anchor_mask)
+    pts  = init_pts.copy()           # tracked points (Nx1x2 float32)
+    prev_gray = anchor_gray.copy()
+    cur_bx0, cur_by0, cur_bx1, cur_by1 = bx0, by0, bx1, by1  # current bbox
 
     masks = [None] * len(frames)
     masks[anchor_frame_index] = anchor_mask
 
-    def _process_frame(idx: int, prev_mask: np.ndarray, prev_frame: np.ndarray, curr_frame: np.ndarray) -> np.ndarray:
-        """Run all six guards and return the final mask for curr_frame."""
-        blank = np.zeros((curr_frame.shape[0], curr_frame.shape[1]), dtype=np.uint8)
-
-        # Guard 1: hard scene cut → blank
-        if is_shot_cut(prev_frame, curr_frame):
-            print(f"[MASK] Shot cut at frame {idx} — mask reset.")
-            return blank
-
-        warped = warp_mask(prev_mask, prev_frame, curr_frame)
-
-        # Guard 2: strip all letterbox bars
-        warped = apply_letterbox_exclusion(warped, curr_frame)
-
-        # Guard 3: skin-tone rejection (removes people from mask)
-        warped = remove_skin_tones(warped, curr_frame)
-
-        # Guard 4: GrabCut refinement every 3rd frame
-        if idx % 3 == 0:
-            candidate = refine_mask(curr_frame, prompt_text, warped, sam_processor)
-        else:
-            candidate = warped
-
-        # Guard 5: basic validity (pixel count + region brightness)
-        if not is_mask_valid(candidate, curr_frame):
-            return blank
-
-        # Guard 6: colour appearance vs anchor product fingerprint
-        if not is_same_object(curr_frame, candidate, anchor_hist):
-            print(f"[MASK] Appearance mismatch at frame {idx} — mask cleared.")
-            return blank
-
-        return candidate
-
     total_frames = len(frames)
     for idx in range(anchor_frame_index + 1, total_frames):
-        if idx % 10 == 0:
-            print(f"[MASK] Processing frame {idx}/{total_frames}...")
-        masks[idx] = _process_frame(idx, masks[idx - 1], frames[idx - 1], frames[idx])
+        if idx % 30 == 0:
+            print(f"[MASK] Tracking frame {idx}/{total_frames}...")
 
-    for idx in range(anchor_frame_index - 1, -1, -1):
-        if idx % 10 == 0:
-            print(f"[MASK] Processing frame {idx}/{total_frames}...")
-        masks[idx] = _process_frame(idx, masks[idx + 1], frames[idx + 1], frames[idx])
+        curr_gray = cv2.cvtColor(frames[idx], cv2.COLOR_BGR2GRAY)
+
+        if pts is not None and len(pts) >= 3:
+            new_pts, status, _ = cv2.calcOpticalFlowPyrLK(
+                prev_gray, curr_gray, pts, None, **lk_params
+            )
+            good_new = new_pts[status.ravel() == 1]
+            good_old = pts[status.ravel() == 1]
+
+            if len(good_new) >= 3:
+                # Compute median displacement of tracked points
+                dx = float(np.median(good_new[:, 0, 0] - good_old[:, 0, 0]))
+                dy = float(np.median(good_new[:, 0, 1] - good_old[:, 0, 1]))
+
+                # Translate bbox by the median displacement
+                cur_bx0 = max(0, min(int(cur_bx0 + dx), proc_width  - 1))
+                cur_by0 = max(0, min(int(cur_by0 + dy), proc_height - 1))
+                cur_bx1 = max(0, min(int(cur_bx1 + dx), proc_width  - 1))
+                cur_by1 = max(0, min(int(cur_by1 + dy), proc_height - 1))
+
+                if cur_bx1 > cur_bx0 and cur_by1 > cur_by0:
+                    masks[idx] = bbox_to_mask([cur_bx0, cur_by0, cur_bx1, cur_by1], proc_height, proc_width)
+                else:
+                    masks[idx] = np.zeros((proc_height, proc_width), dtype=np.uint8)
+
+                pts = good_new.reshape(-1, 1, 2)
+            else:
+                # Too few points survived — use last known bbox
+                print(f"[MASK] LK lost tracking at frame {idx} — holding last bbox.")
+                masks[idx] = bbox_to_mask([cur_bx0, cur_by0, cur_bx1, cur_by1], proc_height, proc_width)
+                pts = None  # stop trying to track
+        else:
+            # No points — hold last known bbox
+            masks[idx] = bbox_to_mask([cur_bx0, cur_by0, cur_bx1, cur_by1], proc_height, proc_width)
+
+        prev_gray = curr_gray
 
     # Upscale masks from processing resolution back to original resolution
     output_masks = []
     for mask in masks:
-        if orig_width != proc_width and mask is not None:
+        if mask is None:
+            mask = np.zeros((proc_height, proc_width), dtype=np.uint8)
+        if orig_width != proc_width:
             mask = cv2.resize(mask, (orig_width, orig_height), interpolation=cv2.INTER_NEAREST)
-        output_masks.append(mask if mask is not None else np.zeros((orig_height, orig_width), dtype=np.uint8))
+        output_masks.append(mask)
 
     frame_urls: List[str] = []
     for idx, mask in enumerate(output_masks):
-        output_path = os.path.join(alpha_dir, f"frame_{idx:04d}.png")
-        save_alpha_mask(mask, output_path)
+        out_path = os.path.join(alpha_dir, f"frame_{idx:04d}.png")
+        save_alpha_mask(mask, out_path)
         frame_urls.append(f"/masks/{show_id}/alpha/frame_{idx:04d}.png")
 
-
-    # Render videos at original resolution using original frames
-    # For preview, re-read original frames so the overlay is at full quality
+    # Render preview at original resolution
     if orig_width != proc_width:
-        print(f"[MASK] Re-reading original frames for preview video at {orig_width}x{orig_height}...")
+        print(f"[MASK] Re-reading original frames for preview at {orig_width}x{orig_height}...")
         cap = cv2.VideoCapture(video_path)
         orig_frames = []
         while True:
@@ -671,9 +706,9 @@ def generate_temporal_alpha_masks(
     else:
         orig_frames = frames
 
-    render_mask_video(alpha_dir,    mask_video_path,    fps, orig_width, orig_height)
+    render_mask_video(alpha_dir, mask_video_path, fps, orig_width, orig_height)
     render_overlay_video(orig_frames, output_masks, preview_video_path, fps, orig_width, orig_height)
-    print(f"[MASK] Generated Preview Video -> {preview_video_path}")
+    print(f"[MASK] Preview video -> {preview_video_path}")
 
 
     return {
