@@ -6,6 +6,7 @@ import cv2
 import base64
 from app.core.config import settings
 from app.services.masking import generate_mask_video
+from app.services.car_detection import analyze_orange_car_seconds
 
 DATA_DIR = "app/db/data"
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -227,18 +228,15 @@ def analyze_data(path, show_id):
     if not frames:
         raise Exception("Failed to extract any frames from the video.")
 
-    # ── 2. Detect the target object from the first frame ─────────────────────
-    print("[INGEST] Identifying target object (via Groq)...")
-    target_object = _detect_object_in_first_frame(
-        client, frames[0][2], vid_width, vid_height
-    )
+    # ── 2. Detect the replacement target second-by-second ───────────────────
+    print("[INGEST] Detecting whole visible orange car once per second...")
+    detection_mode = os.getenv("ORANGE_CAR_DETECTION_MODE", "hybrid")
+    car_detection = analyze_orange_car_seconds(path, mode=detection_mode)
+    target_object = car_detection["target"]
+    initial_bbox = car_detection["initial_bounding_box"]
+    anchor_frame_index = car_detection["first_detected_frame"] or 0
     print(f"[INGEST] Target object: {target_object}")
-
-    # ── 3. Get the initial bounding box for the anchor frame ─────────────────
-    print(f"[INGEST] Detecting tight anchor bounding box on Frame 0 (via Groq)...")
-    initial_bbox = _detect_initial_bbox(
-        client, target_object, frames[0][2], vid_width, vid_height
-    )
+    print(f"[INGEST] First whole-car bbox: {initial_bbox} at frame {anchor_frame_index}")
 
     # ── 4. Extract metadata (two-stage: vision description → text extraction) ─
     print("[INGEST] Extracting metadata (via Groq)...")
@@ -309,6 +307,8 @@ Respond with ONLY a JSON object:
         "video_fps": vid_fps,
         "total_frames": total_frames,
         "initial_bounding_box": initial_bbox,
+        "anchor_frame_index": anchor_frame_index,
+        "second_by_second_detection": car_detection,
     }
 
     # ── 6. Save to per-show JSON ─────────────────────────────────────────────

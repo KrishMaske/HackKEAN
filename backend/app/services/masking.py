@@ -81,11 +81,11 @@ def read_video_frames(video_path: str, target_width: int = PROCESS_WIDTH):
         scale        = target_width / orig_width
         proc_width   = target_width
         proc_height  = int(orig_height * scale)
-        print(f"[MASK] Downscaling from {orig_width}x{orig_height} → {proc_width}x{proc_height} for processing.")
+        print(f"[MASK] Downscaling from {orig_width}x{orig_height} to {proc_width}x{proc_height} for processing.")
     else:
         proc_width   = orig_width
         proc_height  = orig_height
-        print(f"[MASK] Source is {orig_width}x{orig_height} — no downscale needed.")
+        print(f"[MASK] Source is {orig_width}x{orig_height}; no downscale needed.")
 
     scale_x = orig_width  / proc_width
     scale_y = orig_height / proc_height
@@ -128,6 +128,125 @@ def bbox_to_mask(bbox, frame_height: int, frame_width: int) -> np.ndarray:
         if x1 > x0 and y1 > y0:
             mask[y0:y1, x0:x1] = 255
     return mask
+
+
+def _remap_bbox_to_processing_resolution(bbox: list, proc_width: int, proc_height: int, scale_x: float, scale_y: float) -> Optional[list]:
+    if not bbox or len(bbox) != 4 or any(v is None for v in bbox):
+        return None
+    x0, y0, x1, y1 = bbox
+    mapped = [
+        max(0, min(int(x0 / scale_x), proc_width - 1)),
+        max(0, min(int(y0 / scale_y), proc_height - 1)),
+        max(0, min(int(x1 / scale_x), proc_width - 1)),
+        max(0, min(int(y1 / scale_y), proc_height - 1)),
+    ]
+    if mapped[2] <= mapped[0] or mapped[3] <= mapped[1]:
+        return None
+    return mapped
+
+
+def _interpolate_bbox(left: list, right: list, ratio: float) -> list:
+    return [int(round(left[i] + (right[i] - left[i]) * ratio)) for i in range(4)]
+
+
+def _detection_bboxes_by_frame(scene: Dict, frame_count: int, proc_width: int, proc_height: int, scale_x: float, scale_y: float) -> Optional[List[Optional[list]]]:
+    detection_data = scene.get("second_by_second_detection") or {}
+    detections = detection_data.get("detections") or []
+    keyframes = []
+
+    for item in detections:
+        if not item.get("found") or not item.get("bbox"):
+            continue
+        bbox = _remap_bbox_to_processing_resolution(item["bbox"], proc_width, proc_height, scale_x, scale_y)
+        if bbox is None:
+            continue
+        frame_index = int(item.get("frame_index", 0))
+        if 0 <= frame_index < frame_count:
+            keyframes.append((frame_index, bbox))
+
+    if not keyframes:
+        return None
+
+    keyframes.sort(key=lambda item: item[0])
+    frame_bboxes: List[Optional[list]] = [None] * frame_count
+
+    for idx, (frame_index, bbox) in enumerate(keyframes):
+        frame_bboxes[frame_index] = bbox
+
+        if idx == 0:
+            continue
+
+        prev_frame, prev_bbox = keyframes[idx - 1]
+        gap = frame_index - prev_frame
+        if gap <= 1:
+            continue
+
+        for frame in range(prev_frame + 1, frame_index):
+            ratio = (frame - prev_frame) / float(gap)
+            frame_bboxes[frame] = _interpolate_bbox(prev_bbox, bbox, ratio)
+
+    first_frame, first_bbox = keyframes[0]
+    for frame in range(first_frame, frame_count):
+        if frame_bboxes[frame] is None:
+            frame_bboxes[frame] = first_bbox if frame == first_frame else frame_bboxes[frame - 1]
+
+    return frame_bboxes
+
+
+def _render_detection_bbox_masks(
+    show_id: str,
+    video_path: str,
+    frames: List[np.ndarray],
+    fps: float,
+    orig_width: int,
+    orig_height: int,
+    proc_width: int,
+    proc_height: int,
+    alpha_dir: str,
+    mask_video_path: str,
+    preview_video_path: str,
+    frame_bboxes: List[Optional[list]],
+) -> Dict[str, object]:
+    output_masks = []
+    for bbox in frame_bboxes:
+        if bbox is None:
+            mask = np.zeros((proc_height, proc_width), dtype=np.uint8)
+        else:
+            mask = bbox_to_mask(bbox, proc_height, proc_width)
+        if orig_width != proc_width:
+            mask = cv2.resize(mask, (orig_width, orig_height), interpolation=cv2.INTER_NEAREST)
+        output_masks.append(mask)
+
+    frame_urls: List[str] = []
+    for idx, mask in enumerate(output_masks):
+        out_path = os.path.join(alpha_dir, f"frame_{idx:04d}.png")
+        save_alpha_mask(mask, out_path)
+        frame_urls.append(f"/masks/{show_id}/alpha/frame_{idx:04d}.png")
+
+    if orig_width != proc_width:
+        cap = cv2.VideoCapture(video_path)
+        orig_frames = []
+        while True:
+            ok, frm = cap.read()
+            if not ok:
+                break
+            orig_frames.append(frm)
+        cap.release()
+    else:
+        orig_frames = frames
+
+    render_mask_video(alpha_dir, mask_video_path, fps, orig_width, orig_height)
+    render_overlay_video(orig_frames, output_masks, preview_video_path, fps, orig_width, orig_height)
+    print(f"[MASK] Detection-driven whole-car preview -> {preview_video_path}")
+
+    return {
+        "show_id": show_id,
+        "frame_count": len(output_masks),
+        "mask_directory": alpha_dir,
+        "mask_video": mask_video_path,
+        "frame_urls": frame_urls,
+        "preview_url": f"/masks/{show_id}_preview.mp4",
+    }
 
 
 # ── Thresholds (tune here) ────────────────────────────────────────────────────
@@ -615,6 +734,31 @@ def generate_temporal_alpha_masks(
     prompt_text   = prompt or scene.get("target_object") or "the object marked by the provided mask"
     sam_processor = initialize_sam_processor()
 
+    detection_frame_bboxes = _detection_bboxes_by_frame(
+        scene,
+        len(frames),
+        proc_width,
+        proc_height,
+        scale_x,
+        scale_y,
+    )
+    if detection_frame_bboxes:
+        print("[MASK] Using stored second-by-second whole-car detections for preview masks.")
+        return _render_detection_bbox_masks(
+            show_id=show_id,
+            video_path=video_path,
+            frames=frames,
+            fps=fps,
+            orig_width=orig_width,
+            orig_height=orig_height,
+            proc_width=proc_width,
+            proc_height=proc_height,
+            alpha_dir=alpha_dir,
+            mask_video_path=mask_video_path,
+            preview_video_path=preview_video_path,
+            frame_bboxes=detection_frame_bboxes,
+        )
+
     # ── Step 1: Resolve the initial bounding box ─────────────────────────────
     # Use the stored bbox from ingestion (already validated and clamped to frame bounds).
     # Re-map from original resolution → processing resolution.
@@ -822,7 +966,7 @@ def generate_temporal_alpha_masks(
         "mask_directory": alpha_dir,
         "mask_video": mask_video_path,
         "frame_urls": frame_urls,
-        "preview_url": frame_urls[0] if frame_urls else None,
+        "preview_url": f"/masks/{show_id}_preview.mp4",
     }
 
 
@@ -845,5 +989,5 @@ def mask_status(show_id: str) -> Dict[str, object]:
         "ready": True,
         "frame_count": len(files),
         "mask_directory": alpha_dir,
-        "preview_url": f"/masks/{show_id}/alpha/{files[0]}" if files else None,
+        "preview_url": f"/masks/{show_id}_preview.mp4" if files else None,
     }

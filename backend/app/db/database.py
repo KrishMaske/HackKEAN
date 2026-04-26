@@ -44,10 +44,12 @@ DEMO_SCENES = [
 ]
 
 async def seed_db():
-    """Wipes and re-seeds the vault for clean hackathon testing."""
-    await scene_vault.delete_many({})
+    """Seed the vault with default demo scenes when it is empty."""
+    if await scene_vault.count_documents({}) > 0:
+        return
+
     await scene_vault.insert_many(DEMO_SCENES)
-    print("Database Seeded Successfully!")
+    print("Database seeded successfully.")
 
 async def get_historical_context(scene_id: str) -> dict:
     """

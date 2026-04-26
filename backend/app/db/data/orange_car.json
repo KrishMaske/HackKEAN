@@ -1,0 +1,226 @@
+{
+    "show_id": "orange_car",
+    "filepath": "assets/input/fastnfurious.mp4",
+    "production_year": 0,
+    "location": "Unknown",
+    "target_object": "whole visible orange car",
+    "video_width": 832,
+    "video_height": 464,
+    "video_fps": 60.0842865743528,
+    "total_frames": 499,
+    "initial_bounding_box": [
+        510,
+        178,
+        590,
+        363
+    ],
+    "anchor_frame_index": 120,
+    "second_by_second_detection": {
+        "target": "whole visible orange car",
+        "sampling": "one frame per second",
+        "mode": "color",
+        "model": null,
+        "width": 832,
+        "height": 464,
+        "fps": 60.0842865743528,
+        "frame_count": 499,
+        "duration_seconds": 8.305,
+        "first_detected_second": 2,
+        "first_detected_frame": 120,
+        "initial_bounding_box": [
+            510,
+            178,
+            590,
+            363
+        ],
+        "detections": [
+            {
+                "second": 0,
+                "timestamp_ms": 0,
+                "frame_index": 0,
+                "detector": "color",
+                "found": false,
+                "status": "missing",
+                "confidence": 0.0,
+                "bbox": null,
+                "orange_anchor_bbox": null,
+                "orange_anchor_ratio": 0.0,
+                "notes": "no orange car-sized region found"
+            },
+            {
+                "second": 1,
+                "timestamp_ms": 1000,
+                "frame_index": 60,
+                "detector": "color",
+                "found": false,
+                "status": "missing",
+                "confidence": 0.0,
+                "bbox": null,
+                "orange_anchor_bbox": null,
+                "orange_anchor_ratio": 0.0,
+                "notes": "no orange car-sized region found"
+            },
+            {
+                "second": 2,
+                "timestamp_ms": 2000,
+                "frame_index": 120,
+                "detector": "color",
+                "found": true,
+                "status": "review",
+                "confidence": 0.084,
+                "bbox": [
+                    510,
+                    178,
+                    590,
+                    363
+                ],
+                "orange_anchor_bbox": [
+                    515,
+                    243,
+                    585,
+                    336
+                ],
+                "orange_anchor_ratio": 0.2036,
+                "notes": "local whole-car bbox expanded from orange body anchor"
+            },
+            {
+                "second": 3,
+                "timestamp_ms": 3000,
+                "frame_index": 180,
+                "detector": "color",
+                "found": true,
+                "status": "review",
+                "confidence": 0.535,
+                "bbox": [
+                    125,
+                    172,
+                    424,
+                    393
+                ],
+                "orange_anchor_bbox": [
+                    145,
+                    249,
+                    404,
+                    360
+                ],
+                "orange_anchor_ratio": 0.2561,
+                "notes": "local whole-car bbox expanded from orange body anchor"
+            },
+            {
+                "second": 4,
+                "timestamp_ms": 4000,
+                "frame_index": 240,
+                "detector": "color",
+                "found": true,
+                "status": "review",
+                "confidence": 0.902,
+                "bbox": [
+                    91,
+                    155,
+                    607,
+                    400
+                ],
+                "orange_anchor_bbox": [
+                    126,
+                    241,
+                    572,
+                    364
+                ],
+                "orange_anchor_ratio": 0.2304,
+                "notes": "local whole-car bbox expanded from orange body anchor"
+            },
+            {
+                "second": 5,
+                "timestamp_ms": 5000,
+                "frame_index": 300,
+                "detector": "color",
+                "found": true,
+                "status": "review",
+                "confidence": 0.453,
+                "bbox": [
+                    73,
+                    156,
+                    591,
+                    405
+                ],
+                "orange_anchor_bbox": [
+                    108,
+                    243,
+                    556,
+                    368
+                ],
+                "orange_anchor_ratio": 0.1302,
+                "notes": "local whole-car bbox expanded from orange body anchor"
+            },
+            {
+                "second": 6,
+                "timestamp_ms": 6000,
+                "frame_index": 361,
+                "detector": "color",
+                "found": true,
+                "status": "review",
+                "confidence": 0.687,
+                "bbox": [
+                    49,
+                    129,
+                    615,
+                    412
+                ],
+                "orange_anchor_bbox": [
+                    88,
+                    228,
+                    576,
+                    370
+                ],
+                "orange_anchor_ratio": 0.1388,
+                "notes": "local whole-car bbox expanded from orange body anchor"
+            },
+            {
+                "second": 7,
+                "timestamp_ms": 7000,
+                "frame_index": 421,
+                "detector": "color",
+                "found": true,
+                "status": "review",
+                "confidence": 0.05,
+                "bbox": [
+                    387,
+                    147,
+                    437,
+                    202
+                ],
+                "orange_anchor_bbox": [
+                    390,
+                    166,
+                    434,
+                    194
+                ],
+                "orange_anchor_ratio": 0.3131,
+                "notes": "local whole-car bbox expanded from orange body anchor"
+            },
+            {
+                "second": 8,
+                "timestamp_ms": 8000,
+                "frame_index": 481,
+                "detector": "color",
+                "found": true,
+                "status": "review",
+                "confidence": 0.05,
+                "bbox": [
+                    34,
+                    240,
+                    96,
+                    303
+                ],
+                "orange_anchor_bbox": [
+                    38,
+                    262,
+                    92,
+                    294
+                ],
+                "orange_anchor_ratio": 0.2568,
+                "notes": "local whole-car bbox expanded from orange body anchor"
+            }
+        ]
+    }
+}
