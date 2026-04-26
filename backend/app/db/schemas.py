@@ -1,16 +1,10 @@
-# backend/schemas.py
 from typing import TypedDict, List, Optional
 
 class AgentState(TypedDict):
-    user_interest: str
-    scene_id: str
-    historical_context: dict
-    proposed_objects: List[str]
-    final_selection: Optional[str]
-    selected_object: str          # Added to match orchestrator initialization
-    visual_specs: dict
-    audio_specs: dict
+    show_id: str
+    product_data: dict
+    scene_description: str
+    market_insights: List[str]
+    optimization_ideas: List[str]
+    interaction_log: List[str]
     reasoning_log: List[dict]
-    guardrails_enabled: bool      # Added for Task 5.1
-    correction_note: Optional[str]  # Historian → Creative Director feedback
-    retry_count: int              # Guards against infinite loops (max 2 retries)
