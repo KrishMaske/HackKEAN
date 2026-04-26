@@ -27,6 +27,7 @@ type Analytics = {
     frame_count: number;
     duration_seconds: number;
   };
+  status: "processing" | "rendering" | "ready";
   summary: {
     detected_seconds: number;
     sampled_seconds: number;
@@ -302,7 +303,14 @@ export default function SpotlightDashboard() {
           <div className="max-w-[1400px] mx-auto animate-in zoom-in-95 duration-500">
             <header className="mb-12">
               <h2 className="text-4xl font-light text-white mb-2 tracking-tight">Campaign <span className="font-black">Revenue Attribution</span></h2>
-              <p className="text-slate-500 text-sm">{analytics?.scene_understanding.headline || 'Real-time performance metrics'}</p>
+              <div className="flex items-center gap-3">
+                <p className="text-slate-500 text-sm">{analytics?.scene_understanding.headline || 'Real-time performance metrics'}</p>
+                {analytics?.status !== 'ready' && (
+                  <span className="px-2 py-0.5 bg-yellow-500/10 text-yellow-500 text-[10px] font-black uppercase tracking-widest animate-pulse border border-yellow-500/20">
+                    {analytics?.status === 'processing' ? 'Ingesting...' : 'Analyzing ROI...'}
+                  </span>
+                )}
+              </div>
             </header>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
@@ -335,12 +343,15 @@ export default function SpotlightDashboard() {
                       <div 
                         key={i} 
                         onClick={() => { setView('pipeline'); if (videoRef.current) videoRef.current.currentTime = point.second; }}
-                        className={`flex-grow relative group cursor-pointer transition-all ${point.found ? 'bg-yellow-500/20' : 'bg-white/5'}`}
+                        className={`flex-grow relative group cursor-pointer transition-all ${point.found ? 'bg-yellow-500/10' : 'bg-white/5 hover:bg-white/10'}`}
+                        style={{ minWidth: '2px' }}
                       >
-                        <div 
-                          className="absolute bottom-0 w-full bg-yellow-500 opacity-60 group-hover:opacity-100 transition-all" 
-                          style={{height: point.found ? `${point.screen_coverage * 400 + 10}%` : '0%'}}
-                        ></div>
+                        {point.found && (
+                          <div 
+                            className="absolute bottom-0 w-full bg-yellow-500 shadow-[0_0_15px_rgba(234,179,8,0.4)] transition-all" 
+                            style={{height: `${Math.max(15, point.screen_coverage * 500)}%`}}
+                          ></div>
+                        )}
                       </div>
                     ))}
                  </div>

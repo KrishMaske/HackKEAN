@@ -26,7 +26,7 @@ Respond with ONLY valid JSON:
     
     try:
         response = client.models.generate_content(
-            model="gemini-1.5-flash",
+            model="gemma-4-31b-it",
             contents=prompt,
             config={
                 "response_mime_type": "application/json"

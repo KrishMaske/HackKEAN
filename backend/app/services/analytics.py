@@ -181,8 +181,26 @@ async def build_product_analytics(show_id: str) -> dict[str, Any]:
     scene = _load_scene(show_id)
     detection_block = scene.get("second_by_second_detection") or {}
     detections = detection_block.get("detections") or []
+    
+    # If rendering isn't done yet, return a partial state
     if not detections:
-        raise ValueError(f"No second-by-second detections found for show_id='{show_id}'")
+        video_name = os.path.basename(scene.get("filepath", ""))
+        return {
+            "show_id": show_id,
+            "status": "processing",
+            "product": scene.get("target_object") or "tracked product",
+            "video": {
+                "path": scene.get("filepath"),
+                "url": f"/uploads/{video_name}" if video_name else None,
+                "width": scene.get("video_width", 1),
+                "height": scene.get("video_height", 1),
+                "duration_seconds": scene.get("total_frames", 0) / scene.get("video_fps", 30.0) if scene.get("video_fps") else 0
+            },
+            "summary": {"detected_seconds": 0, "visibility_rate": 0},
+            "scene_understanding": {"headline": "Analysis in progress...", "key_moments": [], "interaction_insights": []},
+            "marketing": {"insights": [], "optimizations": []},
+            "timeline": []
+        }
 
     width = int(scene.get("video_width") or detection_block.get("width") or 1)
     height = int(scene.get("video_height") or detection_block.get("height") or 1)
@@ -209,39 +227,17 @@ async def build_product_analytics(show_id: str) -> dict[str, Any]:
         "average_screen_coverage": round(avg_coverage, 4),
         "max_screen_coverage": round(max_coverage, 4),
         "average_confidence": round(avg_confidence, 3),
+        "total_airtime_ms": int(detected_seconds * 1000),
     }
 
-    # ── Marketing Agents Integration ──────────────────────────────────────────
-    marketing_results = scene.get("marketing_analysis")
-    if not marketing_results:
-        print(f"[ANALYTICS] Triggering Marketing Analysis for: {show_id}")
-        from app.services.orchestrator import execute_marketing_analysis
-        
-        product_data = {
-            "product": scene.get("target_object"),
-            "summary": summary
-        }
-        scene_description = scene.get("scene_description", "No description available.")
-        
-        marketing_results = await execute_marketing_analysis(
-            show_id=show_id,
-            product_data=product_data,
-            scene_description=scene_description
-        )
-        
-        # Save results back to scene JSON for caching
-        scene["marketing_analysis"] = {
-            "market_insights": marketing_results.get("market_insights", []),
-            "optimization_ideas": marketing_results.get("optimization_ideas", []),
-            "interaction_log": marketing_results.get("interaction_log", []),
-        }
-        from app.services.ingestion import save_scene
-        save_scene(show_id, scene)
-        marketing_results = scene["marketing_analysis"]
+    # ── Marketing Agents Integration (READ ONLY) ──────────────────────────────
+    # Analysis is now triggered by the masking service only after rendering is done.
+    marketing_results = scene.get("marketing") or scene.get("marketing_analysis") or {}
 
     video_name = os.path.basename(scene.get("filepath", ""))
     return {
         "show_id": show_id,
+        "status": "ready" if marketing_results else "rendering",
         "product": scene.get("target_object") or detection_block.get("target") or "tracked product",
         "video": {
             "path": scene.get("filepath"),
@@ -257,11 +253,11 @@ async def build_product_analytics(show_id: str) -> dict[str, Any]:
         "scene_understanding": {
             "headline": _headline(visible, duration),
             "key_moments": _key_moments(timeline),
-            "interaction_insights": marketing_results.get("interaction_log", []),
+            "interaction_insights": marketing_results.get("interactions") or marketing_results.get("interaction_log", []),
         },
         "marketing": {
-            "insights": marketing_results.get("market_insights", []),
-            "optimizations": marketing_results.get("optimization_ideas", []),
+            "insights": marketing_results.get("insights") or marketing_results.get("market_insights", []),
+            "optimizations": marketing_results.get("optimizations") or marketing_results.get("optimization_ideas", []),
         },
         "timeline": timeline,
     }

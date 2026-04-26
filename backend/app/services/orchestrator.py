@@ -50,3 +50,31 @@ async def execute_marketing_analysis(
     config = {"configurable": {"thread_id": thread_id}}
 
     return await marketing_workflow.ainvoke(initial_state, config=config)
+
+async def run_marketing_workflow(show_id: str):
+    """
+    Wrapper for the ingestion pipeline to trigger marketing analysis.
+    Loads scene data and runs the workflow.
+    """
+    from app.services.ingestion import load_scene, save_scene
+    
+    scene_data = load_scene(show_id)
+    if not scene_data:
+        print(f"[ERROR] Cannot run marketing workflow: {show_id} not found.")
+        return
+
+    result = await execute_marketing_analysis(
+        show_id=show_id,
+        product_data={"product": scene_data.get("target_object"), "summary": scene_data.get("second_by_second_detection", {}).get("summary", {})},
+        scene_description=scene_data.get("scene_description", "")
+    )
+    
+    # Merge results back into scene data
+    scene_data["marketing"] = {
+        "insights": result.get("market_insights", []),
+        "optimizations": result.get("optimization_ideas", []),
+        "interactions": result.get("interaction_log", [])
+    }
+    
+    save_scene(show_id, scene_data)
+    print(f"[ORCHESTRATOR] Marketing Analysis complete for {show_id}.")
