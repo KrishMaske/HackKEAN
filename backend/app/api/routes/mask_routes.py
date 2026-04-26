@@ -96,7 +96,7 @@ async def generate_bw_mask(show_id: str):
 @router.get("/mask/{show_id}/download", tags=["mask"])
 async def download_mask(show_id: str):
     """Stream the pre-generated mask MP4 as a binary response."""
-    mask_path = os.path.join(MASKS_DIR, f"{show_id}_mask.avi")
+    mask_path = os.path.join(MASKS_DIR, f"{show_id}_mask.mp4")
 
     if not os.path.exists(mask_path):
         raise HTTPException(
@@ -109,8 +109,8 @@ async def download_mask(show_id: str):
 
     return FileResponse(
         path=mask_path,
-        media_type="video/x-msvideo",
-        filename=f"{show_id}_mask.avi",
+        media_type="video/mp4",
+        filename=f"{show_id}_mask.mp4",
     )
 
 
@@ -129,7 +129,7 @@ async def get_mask_status(show_id: str):
     except Exception:
         status_msg = "Unknown"
 
-    mask_path = os.path.join(MASKS_DIR, f"{show_id}_mask.avi")
+    mask_path = os.path.join(MASKS_DIR, f"{show_id}_mask.mp4")
     exists    = os.path.exists(mask_path)
 
     return {
