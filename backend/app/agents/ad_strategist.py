@@ -10,7 +10,7 @@ async def ad_strategist_agent(state: AgentState) -> AgentState:
     product_data = state.get("product_data", {})
     scene_description = state.get("scene_description", "Unknown scene context.")
     
-    client = settings.groq_client
+    client = settings.google_client
     prompt = f"""You are a brilliant Ad Strategist. 
 Based on the product "{product_data.get('product')}" and this scene description:
 "{scene_description}"
@@ -26,13 +26,15 @@ Respond with ONLY valid JSON:
 """
     
     try:
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"}
+        response = client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=prompt,
+            config={
+                "response_mime_type": "application/json"
+            }
         )
         import json
-        data = json.loads(response.choices[0].message.content)
+        data = json.loads(response.text)
         state["optimization_ideas"] = data.get("optimizations", [])
         
         state["reasoning_log"].append({

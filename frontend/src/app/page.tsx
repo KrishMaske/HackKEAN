@@ -132,11 +132,11 @@ export default function SpotlightDashboard() {
           }
         } catch (e) { }
       }, 5000);
-
+      // Timeout after 10 minutes
       setTimeout(() => clearInterval(pollInterval), 600000);
 
     } catch (err) {
-      alert("Upload failed: " + (err instanceof Error ? err.message : "Unknown error"));
+      setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setIsUploading(false);
     }
@@ -172,6 +172,12 @@ export default function SpotlightDashboard() {
       <nav className="flex justify-between items-center px-12 py-6 border-b border-white/5 sticky top-0 bg-black/50 backdrop-blur-xl z-50">
         <h1 className="text-2xl font-black tracking-tighter text-white">SPOT<span className="text-yellow-500 italic">LIGHT</span></h1>
         <div className="flex gap-4">
+          <button 
+            onClick={() => setShowUpload(true)}
+            className="px-6 py-2 text-[10px] font-black uppercase tracking-widest text-yellow-500 border border-yellow-500/30 hover:bg-yellow-500 hover:text-black transition-all"
+          >
+            Upload Scene
+          </button>
           <button 
             onClick={() => setView('pipeline')}
             className={`px-6 py-2 text-[10px] font-black uppercase tracking-widest transition-all ${view === 'pipeline' ? 'bg-yellow-500 text-black' : 'text-slate-500 border border-white/10'}`}

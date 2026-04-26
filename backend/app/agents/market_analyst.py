@@ -22,7 +22,7 @@ async def market_analyst_agent(state: AgentState) -> AgentState:
     coverage_multiplier = 1.0 + (max_coverage * 5.0)
     estimated_value = base_value * coverage_multiplier
     
-    client = settings.groq_client
+    client = settings.google_client
     prompt = f"""You are a senior Market Analyst. Analyze the following product exposure data:
 Product: {product_data.get('product')}
 Detected Seconds: {detected_seconds}s
@@ -36,13 +36,15 @@ Respond with ONLY valid JSON:
 """
     
     try:
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"}
+        response = client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=prompt,
+            config={
+                "response_mime_type": "application/json"
+            }
         )
         import json
-        data = json.loads(response.choices[0].message.content)
+        data = json.loads(response.text)
         
         impact_score = data.get("impact_score", 0)
         insights = data.get("insights", [])

@@ -10,7 +10,7 @@ async def scene_analyst_agent(state: AgentState) -> AgentState:
     product_data = state.get("product_data", {})
     scene_description = state.get("scene_description", "No visual description available.")
     
-    client = settings.groq_client
+    client = settings.google_client
     prompt = f"""You are a Scene Analyst specializing in product-character interaction.
 Scene Context: {scene_description}
 Tracked Product: {product_data.get('product')}
@@ -25,13 +25,15 @@ Respond with ONLY valid JSON:
 """
     
     try:
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"}
+        response = client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=prompt,
+            config={
+                "response_mime_type": "application/json"
+            }
         )
         import json
-        data = json.loads(response.choices[0].message.content)
+        data = json.loads(response.text)
         
         summary = data.get("scene_summary", "")
         interactions = data.get("interactions", [])

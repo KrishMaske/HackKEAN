@@ -222,5 +222,25 @@
                 "notes": "local whole-car bbox expanded from orange body anchor"
             }
         ]
+    },
+    "marketing_analysis": {
+        "market_insights": [
+            "Market Impact Score: 68/100",
+            "Estimated Media Value: $10.76",
+            "The whole visible orange car has a moderate market impact due to its relatively high visibility rate and peak screen coverage.",
+            "The detected seconds of 7s is a notable duration, suggesting the product has a reasonable amount of screen time to grab the audience's attention.",
+            "With a peak screen coverage of 41.5%, the product has a significant presence in the scene, indicating potential for high brand recall and advertising effectiveness."
+        ],
+        "optimization_ideas": [
+            "Place the whole visible orange car in a prominent location, such as the center of the scene, to immediately capture the viewer's attention",
+            "Align the car with character actions, such as having a character walk towards or around the vehicle to create a sense of interaction and curiosity",
+            "Use interactive ad triggers, like having the car lights turn on or the engine start when a character approaches, to create an immersive experience and encourage engagement"
+        ],
+        "interaction_log": [
+            "Scene: The scene features a whole visible orange car as the central element, but the exact actions or events unfolding around it are unclear due to the lack of context.",
+            "Tone: Neutral",
+            "Characters are likely viewing or approaching the car",
+            "Potential discussion or examination of the car's features"
+        ]
     }
 }
