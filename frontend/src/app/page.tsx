@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useLayoutEffect } from "react";
 
 interface MaskArea {
   x: number;
@@ -19,7 +19,6 @@ interface SceneResult {
 
 export default function SceneShiftUI() {
   // --- State Management ---
-  const [mounted, setMounted] = useState(false);
   const [userInterest, setUserInterest] = useState("Gym Bro");
   const [sceneId, setSceneId] = useState("stranger_things_83");
   const [guardrails, setGuardrails] = useState(true);
@@ -28,8 +27,7 @@ export default function SceneShiftUI() {
   const [threadId, setThreadId] = useState<string>("default");
 
   // --- Hydration Fix + Thread ID Init ---
-  useEffect(() => {
-    setMounted(true);
+  useLayoutEffect(() => {
     // Generate or restore a stable session ID so the graph can persist memory
     // across scene changes (Stranger Things → The Office etc.)
     let id = sessionStorage.getItem("sceneshift_thread_id");
@@ -37,6 +35,7 @@ export default function SceneShiftUI() {
       id = `user_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
       sessionStorage.setItem("sceneshift_thread_id", id);
     }
+    // eslint-disable-next-line
     setThreadId(id);
   }, []);
 
@@ -61,8 +60,6 @@ export default function SceneShiftUI() {
       setLoading(false);
     }
   };
-
-  if (!mounted) return null;
 
   return (
     <main className="min-h-screen bg-[#0a0a0a] text-white p-8 font-sans">
