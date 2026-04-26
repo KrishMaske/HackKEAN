@@ -1,0 +1,41 @@
+[
+  {
+    "id": "stranger_things_83",
+    "title": "Stranger Things",
+    "subtitle": "S1 E1 · Chapter One: The Vanishing of Will Byers",
+    "year": 1983,
+    "videoKey": "videoStrangerThings",
+    "thumbnailKey": "thumbStrangerThings",
+    "description": "When a young boy vanishes, a small town uncovers a mystery involving secret experiments, terrifying supernatural forces — and one very strange little girl.",
+    "match": 98,
+    "rating": "TV-14",
+    "seasons": 4,
+    "targetObject": "KFC Bucket"
+  },
+  {
+    "id": "the_office_05",
+    "title": "The Office",
+    "subtitle": "S2 E4 · The Fire",
+    "year": 2005,
+    "videoKey": "videoTheOffice",
+    "thumbnailKey": "thumbTheOffice",
+    "description": "A fire in the office forces the staff outside for the day, leading to a heated game of Desert Island and revelations about office romances.",
+    "match": 95,
+    "rating": "TV-PG",
+    "seasons": 9,
+    "targetObject": "Coca Cola Can"
+  },
+  {
+    "id": "succession_20",
+    "title": "Succession",
+    "subtitle": "S3 E1 · Secession",
+    "year": 2020,
+    "videoKey": "videoSuccession",
+    "thumbnailKey": "thumbSuccession",
+    "description": "The Roy family controls one of the biggest media and entertainment conglomerates. When Logan Roy considers retirement, a bitter family power struggle begins.",
+    "match": 92,
+    "rating": "TV-MA",
+    "seasons": 4,
+    "targetObject": "Luxury Watch"
+  }
+]

@@ -1,144 +1,142 @@
 'use client';
 import { useState, useEffect } from 'react';
 
-export default function SpotlightFinal() {
-  const [view, setView] = useState('pipeline');
+export default function InteractiveVisionMark() {
   const [isProcessing, setIsProcessing] = useState(false);
-  const [showData, setShowData] = useState(false);
-  const [target, setTarget] = useState('');
+  const [logs, setLogs] = useState<string[]>([]);
+  const [progress, setProgress] = useState(0);
+  const [confidence, setConfidence] = useState(0);
 
-  const scrollToApp = () => {
-    document.getElementById('workspace')?.scrollIntoView({ behavior: 'smooth' });
-  };
+  // Simulate interactive "Live" tracking data
+  useEffect(() => {
+    if (isProcessing) {
+      const interval = setInterval(() => {
+        setConfidence(Math.floor(Math.random() * (99 - 92 + 1) + 92));
+      }, 500);
+      return () => clearInterval(interval);
+    }
+  }, [isProcessing]);
 
-  const runAnalysis = () => {
+  const runPipeline = () => {
     setIsProcessing(true);
-    setShowData(false);
-    setTimeout(() => {
-      setIsProcessing(false);
-      setShowData(true);
-    }, 2500);
-  };
+    setProgress(0);
+    setLogs(["Initializing pipeline..."]);
 
-  const cokeData = {
-    exposure: "7.4s", prominence: "Maximum", value: "$112,000", visibility: "94%",
-    logs: ["Target: Coke Can", "Subject: Eleven", "Status: Solo Hero Shot", "Temporal Stability: 99.5%"]
-  };
+    const steps = ["Identifying Object...", "Mapping Temporal Vectors...", "SAM 2 Propagation...", "Finalizing Mask..."];
 
-  const kfcData = {
-    exposure: "11.2s", prominence: "High", value: "$84,000", visibility: "85%",
-    logs: ["Target: KFC Bucket", "Cuts Detected: 3", "Context: Family Dinner", "Temporal Stability: 98.2%"]
+    steps.forEach((step, i) => {
+      setTimeout(() => {
+        setLogs(prev => [...prev, `[SYSTEM] ${step}`]);
+        setProgress((prev) => prev + 25);
+        if (i === steps.length - 1) setIsProcessing(false);
+      }, (i + 1) * 1500);
+    });
   };
-
-  const activeData = target.toLowerCase().includes('coke') ? cokeData : kfcData;
 
   return (
-    <div className="bg-[#050505] text-slate-200 scroll-smooth selection:bg-yellow-500/30">
-      
-      {/* SECTION 1: HERO LANDING */}
-      <section className="h-screen flex flex-col items-center justify-center relative overflow-hidden px-6">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-yellow-500/10 via-transparent to-transparent opacity-50 animate-pulse"></div>
-        <div className="z-10 text-center">
-          <div className="inline-block px-4 py-1 mb-6 border border-yellow-500/30 rounded-full bg-yellow-500/5 text-yellow-500 text-[10px] font-black tracking-[0.3em] uppercase">
-            Computer Vision for Shoppable Media
-          </div>
-          <h1 className="text-8xl md:text-[10rem] font-black tracking-tighter text-white leading-none mb-6">
-            SPOT<span className="text-yellow-500 italic">LIGHT.</span>
-          </h1>
-          <p className="text-lg md:text-xl text-slate-400 mb-10 max-w-2xl mx-auto font-light tracking-tight">
-            We quantify the unquantifiable. Precise temporal masking for <span className="text-white">brand placement intelligence</span>.
-          </p>
-          <button onClick={scrollToApp} className="px-12 py-5 bg-yellow-500 text-black rounded-full font-black text-xs uppercase tracking-[0.2em] hover:bg-white transition-all hover:scale-105 shadow-[0_0_50px_rgba(234,179,8,0.2)]">
-            Open Pipeline
-          </button>
-        </div>
-      </section>
+    <main className="min-h-screen bg-[#0a0a0c] text-slate-200 p-6 font-sans selection:bg-blue-500/30">
+      <div className="max-w-7xl mx-auto grid grid-cols-12 gap-6">
 
-      {/* SECTION 2: WORKSPACE & ANALYTICS */}
-      <section id="workspace" className="min-h-screen bg-[#0a0a0a] border-t border-white/5 flex flex-col">
-        {/* NAV HUD */}
-        <nav className="flex justify-between items-center px-12 py-8 sticky top-0 bg-black/80 backdrop-blur-md z-40 border-b border-white/5">
-          <span className="text-xl font-black text-white">SPOT<span className="text-yellow-500 italic font-light">LIGHT</span></span>
-          <div className="flex gap-2">
-            <button onClick={() => setView('pipeline')} className={`px-6 py-2 text-[10px] font-black uppercase tracking-widest rounded-full transition-all ${view === 'pipeline' ? 'bg-yellow-500 text-black' : 'text-slate-500 bg-white/5'}`}>Extraction</button>
-            <button onClick={() => setView('analytics')} className={`px-6 py-2 text-[10px] font-black uppercase tracking-widest rounded-full transition-all ${view === 'analytics' ? 'bg-yellow-500 text-black' : 'text-slate-500 bg-white/5'}`}>Analytical View</button>
-          </div>
-        </nav>
+        {/* --- LEFT: CONTROL PANEL --- */}
+        <div className="col-span-12 lg:col-span-4 space-y-6">
+          <div className="bg-[#141417] border border-white/5 p-6 rounded-3xl shadow-2xl">
+            <div className="flex items-center gap-2 mb-8">
+              <div className="w-3 h-3 bg-blue-500 rounded-full animate-ping"></div>
+              <h2 className="font-bold text-sm uppercase tracking-widest text-blue-500">Input Engine</h2>
+            </div>
 
-        <div className="p-12 max-w-[1600px] mx-auto w-full flex-grow">
-          {view === 'pipeline' ? (
-            <div className="grid grid-cols-12 gap-8 animate-in fade-in duration-500">
-              <div className="col-span-12 lg:col-span-8 space-y-6">
-                <div className="aspect-video bg-black rounded-[2.5rem] border border-white/5 relative overflow-hidden shadow-2xl flex items-center justify-center">
-                  {isProcessing ? (
-                    <div className="text-center">
-                      <div className="w-12 h-12 border-2 border-yellow-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                      <p className="text-[10px] font-black text-yellow-500 tracking-[0.4em] uppercase">Neural Mapping Active</p>
-                    </div>
-                  ) : (
-                    <p className="text-[10px] font-black text-slate-700 tracking-[0.4em] uppercase">Ready for Feed Ingest</p>
-                  )}
-                </div>
-                <div className="grid grid-cols-4 gap-4">
-                  {['Temporal Stability', 'Confidence', 'Mask Density', 'Scene Logic'].map((s, i) => (
-                    <div key={i} className="bg-[#111] p-4 border-t border-white/5 text-center rounded-2xl">
-                      <p className="text-[8px] text-slate-500 uppercase font-black mb-1">{s}</p>
-                      <p className="text-sm font-bold text-white tracking-widest">{showData ? "NOMINAL" : "---"}</p>
-                    </div>
-                  ))}
-                </div>
+            <div className="space-y-4">
+              <div className="group">
+                <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block group-focus-within:text-blue-400 transition-colors">Target Object</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Orange Car"
+                  className="w-full bg-black/40 border border-white/10 rounded-2xl p-4 outline-none focus:border-blue-500/50 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm"
+                />
               </div>
-              <div className="col-span-12 lg:col-span-4 space-y-6">
-                <div className="bg-[#111] p-8 rounded-[2.5rem] border border-white/5">
-                  <h3 className="text-[10px] font-black text-yellow-500 uppercase tracking-widest mb-6">Target Identifier</h3>
-                  <input 
-                    type="text" 
-                    onChange={(e) => setTarget(e.target.value)}
-                    placeholder="e.g. KFC Bucket or Coke Can" 
-                    className="w-full bg-black border border-white/10 rounded-2xl p-4 mb-4 outline-none focus:border-yellow-500 transition-all text-xs"
-                  />
-                  <button onClick={runAnalysis} className="w-full bg-yellow-500 text-black py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-white transition-all">
-                    Start Neural Scan
-                  </button>
+
+              <button
+                onClick={runPipeline}
+                disabled={isProcessing}
+                className="w-full relative group overflow-hidden bg-blue-600 py-4 rounded-2xl font-black text-white transition-all active:scale-95 disabled:opacity-50"
+              >
+                <span className="relative z-10">{isProcessing ? 'ANALYZING...' : 'START EXTRACTION'}</span>
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-400 to-blue-700 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+              </button>
+            </div>
+          </div>
+
+          {/* REAL-TIME LOGS */}
+          <div className="bg-black rounded-3xl p-5 border border-white/5 h-64 flex flex-col shadow-inner">
+            <div className="flex justify-between items-center mb-4">
+              <span className="text-[10px] font-mono text-slate-500">TERMINAL_FEED</span>
+              {isProcessing && <span className="text-[10px] font-mono text-green-500 animate-pulse">● LIVE</span>}
+            </div>
+            <div className="font-mono text-[11px] space-y-2 overflow-y-auto scrollbar-hide">
+              {logs.map((log, i) => (
+                <div key={i} className="flex gap-2 text-green-400/80">
+                  <span className="text-slate-700">[{new Date().toLocaleTimeString([], { hour12: false })}]</span>
+                  <span>{log}</span>
                 </div>
-                <div className="bg-black rounded-[2.5rem] p-6 border border-white/5 h-64 font-mono text-[10px] text-yellow-500/60 leading-relaxed overflow-y-auto">
-                   {showData ? activeData.logs.map((l, i) => <div key={i}>{`> ${l}`}</div>) : <div className="opacity-20 italic">Awaiting neural initialization...</div>}
-                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* --- RIGHT: INTERACTIVE VIEWER --- */}
+        <div className="col-span-12 lg:col-span-8 bg-[#141417] border border-white/5 rounded-[2rem] overflow-hidden flex flex-col">
+
+          {/* Top Video Area */}
+          <div className="relative flex-grow bg-black group cursor-crosshair">
+            {/* Visualizer Overlay */}
+            <div className="absolute inset-0 z-10 opacity-30 pointer-events-none"
+              style={{ backgroundImage: 'radial-gradient(circle, #3b82f6 1px, transparent 1px)', backgroundSize: '30px 30px' }}></div>
+
+            <div className="absolute inset-0 flex items-center justify-center">
+              {/* Replace with your video tags here */}
+              <div className="text-slate-800 font-black text-6xl italic select-none uppercase tracking-tighter opacity-20">
+                {isProcessing ? 'Processing Stream...' : 'Ready for Feed'}
               </div>
             </div>
-          ) : (
-            <div className="animate-in zoom-in-95 duration-500">
-              <div className="grid grid-cols-4 gap-6 mb-8">
-                {[
-                  { l: "Exposure Value", v: showData ? activeData.value : "$0", s: "Market Equivalent" },
-                  { l: "On-Screen Duration", v: showData ? activeData.exposure : "0s", s: "Aggregate Time" },
-                  { l: "Visual Prominence", v: showData ? activeData.prominence : "N/A", s: "Subjective Score" },
-                  { l: "Platform Visibility", v: showData ? activeData.visibility : "0%", s: "Temporal Sync" }
-                ].map((c, i) => (
-                  <div key={i} className="bg-[#111] p-8 rounded-[2.5rem] border border-white/5">
-                    <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest mb-2">{c.l}</p>
-                    <p className="text-4xl font-light text-white tracking-tighter mb-1">{c.v}</p>
-                    <p className="text-[9px] text-yellow-500 font-bold uppercase">{c.s}</p>
-                  </div>
-                ))}
+
+            {/* Interactive Confidence Badge */}
+            {isProcessing && (
+              <div className="absolute top-6 right-6 z-20 bg-black/80 backdrop-blur-md border border-white/10 p-4 rounded-2xl shadow-2xl animate-in zoom-in-95">
+                <p className="text-[10px] text-slate-500 font-bold uppercase mb-1">AI Confidence</p>
+                <p className="text-3xl font-mono font-black text-blue-500">{confidence}%</p>
               </div>
-              <div className="bg-[#111] p-12 rounded-[3rem] border border-white/5 min-h-[400px] flex items-center justify-center text-center">
-                 <div>
-                    <h4 className="text-xs font-black uppercase tracking-[0.5em] text-slate-600 mb-8 italic">Revenue Attribution Matrix</h4>
-                    <div className="flex items-end gap-3 h-48">
-                       {[40, 70, 50, 90, 100, 60, 80, 40, 95, 30].map((h, i) => (
-                         <div key={i} className="w-8 bg-white/5 rounded-t-sm relative group">
-                            <div className="absolute bottom-0 w-full bg-yellow-500 transition-all duration-1000" style={{height: showData ? `${h}%` : '0%'}}></div>
-                         </div>
-                       ))}
-                    </div>
-                    <p className="mt-8 text-[10px] text-slate-500 font-bold uppercase tracking-widest">Temporal Attention Delta (Peak: Frame 112)</p>
-                 </div>
+            )}
+          </div>
+
+          {/* Bottom Controls Area */}
+          <div className="p-8 bg-[#18181b] border-t border-white/5">
+            <div className="flex items-center gap-6">
+              <div className="flex-grow">
+                <div className="flex justify-between mb-2">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">Temporal Progress</span>
+                  <span className="text-[10px] font-bold text-blue-500 uppercase">{progress}%</span>
+                </div>
+                <div className="w-full bg-black rounded-full h-1.5 overflow-hidden">
+                  <div
+                    className="bg-blue-500 h-full transition-all duration-700 ease-out"
+                    style={{ width: `${progress}%` }}
+                  ></div>
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <button className="p-3 bg-white/5 hover:bg-white/10 rounded-xl transition-colors">
+                  <div className="w-4 h-4 border-2 border-slate-400 rounded-sm"></div>
+                </button>
+                <button className="p-3 bg-blue-500/20 text-blue-400 rounded-xl font-bold text-xs px-6 border border-blue-500/20">
+                  EXPORT MASK (JSON)
+                </button>
               </div>
             </div>
-          )}
+          </div>
+
         </div>
-      </section>
-    </div>
+      </div>
+    </main>
   );
 }

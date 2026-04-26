@@ -1,0 +1,128 @@
+[
+  {
+    "userId": 1,
+    "showId": "stranger_things_83",
+    "segments": [
+      {
+        "startTime": 2.0,
+        "endTime": 14.0,
+        "productName": "KFC Bucket",
+        "maskVideoPath": "/masks/stranger_things_83_mask.mp4",
+        "previewVideoPath": "/masks/stranger_things_83_preview.mp4",
+        "color": "#f59e0b"
+      }
+    ]
+  },
+  {
+    "userId": 2,
+    "showId": "stranger_things_83",
+    "segments": [
+      {
+        "startTime": 2.0,
+        "endTime": 14.0,
+        "productName": "KFC Bucket",
+        "maskVideoPath": "/masks/stranger_things_83_mask.mp4",
+        "previewVideoPath": "/masks/stranger_things_83_preview.mp4",
+        "color": "#22c55e"
+      }
+    ]
+  },
+  {
+    "userId": 3,
+    "showId": "stranger_things_83",
+    "segments": [
+      {
+        "startTime": 2.0,
+        "endTime": 14.0,
+        "productName": "KFC Bucket",
+        "maskVideoPath": "/masks/stranger_things_83_mask.mp4",
+        "previewVideoPath": "/masks/stranger_things_83_preview.mp4",
+        "color": "#3b82f6"
+      }
+    ]
+  },
+  {
+    "userId": 1,
+    "showId": "the_office_05",
+    "segments": [
+      {
+        "startTime": 5.0,
+        "endTime": 18.0,
+        "productName": "Coca Cola Can",
+        "maskVideoPath": "/masks/the_office_05_mask.mp4",
+        "previewVideoPath": "/masks/the_office_05_preview.mp4",
+        "color": "#ef4444"
+      }
+    ]
+  },
+  {
+    "userId": 2,
+    "showId": "the_office_05",
+    "segments": [
+      {
+        "startTime": 5.0,
+        "endTime": 18.0,
+        "productName": "Coca Cola Can",
+        "maskVideoPath": "/masks/the_office_05_mask.mp4",
+        "previewVideoPath": "/masks/the_office_05_preview.mp4",
+        "color": "#22c55e"
+      }
+    ]
+  },
+  {
+    "userId": 3,
+    "showId": "the_office_05",
+    "segments": [
+      {
+        "startTime": 5.0,
+        "endTime": 18.0,
+        "productName": "Coca Cola Can",
+        "maskVideoPath": "/masks/the_office_05_mask.mp4",
+        "previewVideoPath": "/masks/the_office_05_preview.mp4",
+        "color": "#3b82f6"
+      }
+    ]
+  },
+  {
+    "userId": 1,
+    "showId": "succession_20",
+    "segments": [
+      {
+        "startTime": 3.0,
+        "endTime": 12.0,
+        "productName": "Luxury Watch",
+        "maskVideoPath": "/masks/succession_20_mask.mp4",
+        "previewVideoPath": "/masks/succession_20_preview.mp4",
+        "color": "#a855f7"
+      }
+    ]
+  },
+  {
+    "userId": 2,
+    "showId": "succession_20",
+    "segments": [
+      {
+        "startTime": 3.0,
+        "endTime": 12.0,
+        "productName": "Luxury Watch",
+        "maskVideoPath": "/masks/succession_20_mask.mp4",
+        "previewVideoPath": "/masks/succession_20_preview.mp4",
+        "color": "#22c55e"
+      }
+    ]
+  },
+  {
+    "userId": 3,
+    "showId": "succession_20",
+    "segments": [
+      {
+        "startTime": 3.0,
+        "endTime": 12.0,
+        "productName": "Luxury Watch",
+        "maskVideoPath": "/masks/succession_20_mask.mp4",
+        "previewVideoPath": "/masks/succession_20_preview.mp4",
+        "color": "#3b82f6"
+      }
+    ]
+  }
+]

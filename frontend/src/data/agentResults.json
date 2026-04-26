@@ -1,0 +1,173 @@
+[
+  {
+    "userId": 1,
+    "showId": "stranger_things_83",
+    "finalSelection": "1983 Schwinn Airdyne Exercise Bike",
+    "reasoningLog": [
+      { "agent": "Creative Director", "action": "Proposal", "message": "For a Gym Bro watching Stranger Things (set in 1983), I propose replacing the KFC Bucket with a 1983 Schwinn Airdyne Exercise Bike. The Schwinn Airdyne was THE home fitness revolution of the early 80s — it fits the era perfectly and speaks directly to our viewer's fitness lifestyle." },
+      { "agent": "Historian", "action": "Validation", "message": "✅ APPROVED. The Schwinn Airdyne AD3 launched in 1978 and was a top-seller through the mid-80s. Its presence in a 1983 Hawkins, Indiana living room is perfectly period-authentic. The chrome and black colorway matches the visual palette of the era." },
+      { "agent": "Cinematographer", "action": "Visual Spec", "message": "The Schwinn Airdyne should be placed in the same spatial zone as the original KFC bucket. Given the warm, amber-toned lighting of the Byers' living room, I recommend a subtle warm color grade on the product to match. Scale at 85% of the mask bounding box." },
+      { "agent": "Foley Artist", "action": "Audio Spec", "message": "Subtle mechanical whir of the Airdyne's fan wheel, barely audible beneath the dialogue. Mix at -28dB relative to scene audio. Add a soft metallic click when the product first appears on screen." }
+    ],
+    "product": {
+      "name": "1983 Schwinn Airdyne Exercise Bike",
+      "price": 249.99,
+      "description": "The iconic dual-action stationary bike that started the home fitness revolution. Fan-based air resistance, chrome finish, original 1983 model.",
+      "link": "https://www.schwinnfitness.com/airdyne",
+      "imageUrl": "/products/schwinn_airdyne.webp",
+      "category": "Fitness Equipment"
+    }
+  },
+  {
+    "userId": 2,
+    "showId": "stranger_things_83",
+    "finalSelection": "1983 Jell-O Pudding Pops",
+    "reasoningLog": [
+      { "agent": "Creative Director", "action": "Proposal", "message": "For a Foodie watching Stranger Things, I propose Jell-O Pudding Pops — the quintessential 80s frozen treat. Bill Cosby was their spokesman in '83, and they were in every American freezer. Perfect nostalgia play for a food-obsessed viewer." },
+      { "agent": "Historian", "action": "Validation", "message": "✅ APPROVED. Jell-O Pudding Pops debuted in 1979 and peaked in popularity 1982-1985. The chocolate/vanilla swirl variety was the #1 frozen novelty in America by 1983. Completely era-authentic." },
+      { "agent": "Cinematographer", "action": "Visual Spec", "message": "The Pudding Pop box should replace the KFC bucket with a slight warm tint. The iconic brown/orange packaging catches the incandescent light naturally. Position centered in the mask zone at 90% scale." },
+      { "agent": "Foley Artist", "action": "Audio Spec", "message": "Soft freezer-door sound effect when the product appears, followed by the subtle crinkle of the plastic wrapper. Mix at -30dB, purely atmospheric." }
+    ],
+    "product": {
+      "name": "Jell-O Pudding Pops (1983 Edition)",
+      "price": 4.99,
+      "description": "The frozen treat that defined a generation. Creamy chocolate pudding on a stick, straight from 1983. Box of 12.",
+      "link": "https://www.jello.com/pudding-pops",
+      "imageUrl": "/products/pudding_pops.webp",
+      "category": "Frozen Treats"
+    }
+  },
+  {
+    "userId": 3,
+    "showId": "stranger_things_83",
+    "finalSelection": "1983 Commodore 64 Home Computer",
+    "reasoningLog": [
+      { "agent": "Creative Director", "action": "Proposal", "message": "For a Tech Nerd watching Stranger Things, the Commodore 64 is the obvious choice. It was the best-selling computer of 1983 — every tech-savvy kid wanted one. It's the perfect bridge between the show's D&D culture and our viewer's tech interests." },
+      { "agent": "Historian", "action": "Validation", "message": "✅ APPROVED. The Commodore 64 launched June 1982, hit mass market in early 1983, and sold over 2 million units that year alone. Its beige/brown casing is period-perfect for a Hawkins living room." },
+      { "agent": "Cinematographer", "action": "Visual Spec", "message": "The C64 should be positioned with its keyboard angled slightly toward camera. The beige plastic catches the warm 80s living room light beautifully. Add a subtle CRT glow effect on the monitor screen. Scale at 80% of mask zone." },
+      { "agent": "Foley Artist", "action": "Audio Spec", "message": "Classic C64 boot sound (SID chip startup chirp) at -26dB when product appears. Follow with soft key-click ambience at -32dB. The SID chip sound is instantly recognizable to any tech enthusiast." }
+    ],
+    "product": {
+      "name": "Commodore 64 Home Computer",
+      "price": 595.00,
+      "description": "The world's best-selling home computer. 64KB RAM, SID sound chip, VIC-II graphics. The machine that launched a generation of programmers.",
+      "link": "https://www.commodore.ca/commodore-products/commodore-64",
+      "imageUrl": "/products/commodore_64.webp",
+      "category": "Vintage Computing"
+    }
+  },
+  {
+    "userId": 1,
+    "showId": "the_office_05",
+    "finalSelection": "2005 Bowflex SelectTech 552 Dumbbells",
+    "reasoningLog": [
+      { "agent": "Creative Director", "action": "Proposal", "message": "For a Gym Bro watching The Office, I'm proposing the Bowflex SelectTech 552 Dumbbells. They launched in 2005 — the exact year of this episode — and were THE must-have home gym item that every fitness enthusiast was talking about." },
+      { "agent": "Historian", "action": "Validation", "message": "✅ APPROVED. The SelectTech 552 launched Q1 2005 and was featured in Men's Health 'Best Home Gym Gear' that same year. Perfectly era-appropriate for a mid-2000s office setting." },
+      { "agent": "Cinematographer", "action": "Visual Spec", "message": "The dumbbells should sit where the Coca Cola can was, catching the fluorescent office lighting. Their red/black color scheme pops against the neutral office beige. Scale at 75%." },
+      { "agent": "Foley Artist", "action": "Audio Spec", "message": "Metallic weight-plate click when product appears, barely perceptible at -30dB. No ambient sound needed — the office background noise does the work." }
+    ],
+    "product": {
+      "name": "Bowflex SelectTech 552 Dumbbells",
+      "price": 399.00,
+      "description": "Replace 15 sets of weights with one. Adjustable from 5 to 52.5 lbs with the turn of a dial. The home gym revolution of 2005.",
+      "link": "https://www.bowflex.com/selecttech/552",
+      "imageUrl": "/products/bowflex_552.webp",
+      "category": "Fitness Equipment"
+    }
+  },
+  {
+    "userId": 2,
+    "showId": "the_office_05",
+    "finalSelection": "2005 Whole Foods 365 Organic Sparkling Water",
+    "reasoningLog": [
+      { "agent": "Creative Director", "action": "Proposal", "message": "For a Foodie watching The Office, I suggest Whole Foods 365 Organic Sparkling Water. Whole Foods was expanding rapidly in 2005, and their 365 brand was becoming the go-to for health-conscious consumers." },
+      { "agent": "Historian", "action": "Validation", "message": "✅ APPROVED. The 365 Everyday Value brand was well-established by 2005. Whole Foods had 175 stores by that year and was the fastest-growing grocer in America." },
+      { "agent": "Cinematographer", "action": "Visual Spec", "message": "The sparkling water can replaces the Coca Cola. The green/white 365 branding provides good contrast against Michael Scott's desk. Scale at 100% — same container form factor." },
+      { "agent": "Foley Artist", "action": "Audio Spec", "message": "Subtle carbonation fizz sound when product appears at -28dB. Clean, refreshing audio cue that signals 'premium alternative.'" }
+    ],
+    "product": {
+      "name": "365 Organic Sparkling Water (Lime)",
+      "price": 3.49,
+      "description": "Crisp, clean organic sparkling water with a hint of lime. No artificial sweeteners, no calories. 12-pack.",
+      "link": "https://www.wholefoodsmarket.com/products/365-sparkling",
+      "imageUrl": "/products/365_sparkling.webp",
+      "category": "Beverages"
+    }
+  },
+  {
+    "userId": 3,
+    "showId": "the_office_05",
+    "finalSelection": "2005 Apple iPod Video (5th Gen)",
+    "reasoningLog": [
+      { "agent": "Creative Director", "action": "Proposal", "message": "For a Tech Nerd watching The Office, the iPod Video is the perfect placement. It launched October 2005 — the same season as this episode. It was the most talked-about tech product of the year." },
+      { "agent": "Historian", "action": "Validation", "message": "✅ APPROVED. The 5th-gen iPod with video launched October 12, 2005. It was Apple's most successful iPod model, selling millions in Q4 2005. The white/chrome design is iconic." },
+      { "agent": "Cinematographer", "action": "Visual Spec", "message": "The iPod should sit on the desk where the Coke can was. Its reflective chrome back catches the office lighting beautifully. Add a subtle screen glow. Scale at 70%." },
+      { "agent": "Foley Artist", "action": "Audio Spec", "message": "The iconic iPod click-wheel sound at -24dB when product appears. Brief, distinctive, instantly recognizable. Follow with a soft music snippet fading in at -34dB." }
+    ],
+    "product": {
+      "name": "Apple iPod Video (5th Generation)",
+      "price": 299.00,
+      "description": "30GB of music, photos, and now VIDEO in your pocket. The thinnest iPod ever with a gorgeous 2.5-inch color display.",
+      "link": "https://www.apple.com/shop/product/ipod-classic",
+      "imageUrl": "/products/ipod_video.webp",
+      "category": "Consumer Electronics"
+    }
+  },
+  {
+    "userId": 1,
+    "showId": "succession_20",
+    "finalSelection": "Peloton Bike+ (2020 Edition)",
+    "reasoningLog": [
+      { "agent": "Creative Director", "action": "Proposal", "message": "For a Gym Bro watching Succession, the Peloton Bike+ is the ultimate status symbol. Launched in 2020, it represents the same wealth-meets-wellness culture that Succession's characters embody." },
+      { "agent": "Historian", "action": "Validation", "message": "✅ APPROVED. The Peloton Bike+ launched September 2020 at $2,495. It became the fitness status symbol of the pandemic era, perfectly aligned with the Roy family's luxury lifestyle." },
+      { "agent": "Cinematographer", "action": "Visual Spec", "message": "The Peloton's sleek black/red design matches Succession's moody, high-contrast cinematography. Position in the mask zone with the screen facing camera. Scale at 85%." },
+      { "agent": "Foley Artist", "action": "Audio Spec", "message": "Subtle electronic hum of the bike's resistance system at -30dB. Add a brief Peloton instructor voice clip at -28dB: 'Let's go!' — aspirational and energetic." }
+    ],
+    "product": {
+      "name": "Peloton Bike+ (2020)",
+      "price": 2495.00,
+      "description": "The ultimate connected fitness bike. 24-inch rotating HD touchscreen, Apple GymKit integration, auto-follow resistance. The status symbol of home fitness.",
+      "link": "https://www.onepeloton.com/bike-plus",
+      "imageUrl": "/products/peloton_plus.webp",
+      "category": "Fitness Equipment"
+    }
+  },
+  {
+    "userId": 2,
+    "showId": "succession_20",
+    "finalSelection": "2020 Erewhon Organic Cold-Pressed Juice",
+    "reasoningLog": [
+      { "agent": "Creative Director", "action": "Proposal", "message": "For a Foodie watching Succession, Erewhon juice is the perfect placement. It's the $20 juice that became the ultimate LA status symbol — fitting for a show about billionaire excess." },
+      { "agent": "Historian", "action": "Validation", "message": "✅ APPROVED. Erewhon Market's cold-pressed juice line became a cultural phenomenon in 2019-2020, synonymous with elite wellness culture. A $20 juice in a Roy family scene is deliciously on-brand." },
+      { "agent": "Cinematographer", "action": "Visual Spec", "message": "The Erewhon bottle's clean, minimalist design fits Succession's cold, corporate aesthetic perfectly. The pale green juice catches light beautifully. Position at 90% scale." },
+      { "agent": "Foley Artist", "action": "Audio Spec", "message": "Glass bottle set-down sound at -26dB — heavy, premium glass on marble. Subtle liquid movement inside the bottle at -32dB. Luxury audio cues only." }
+    ],
+    "product": {
+      "name": "Erewhon Organic Cold-Pressed Juice",
+      "price": 20.00,
+      "description": "Hand-pressed organic green juice from Erewhon Market. Kale, celery, cucumber, lemon, ginger. The billionaire's daily detox.",
+      "link": "https://www.erewhonmarket.com/juices",
+      "imageUrl": "/products/erewhon_juice.webp",
+      "category": "Premium Beverages"
+    }
+  },
+  {
+    "userId": 3,
+    "showId": "succession_20",
+    "finalSelection": "2020 Apple Pro Display XDR",
+    "reasoningLog": [
+      { "agent": "Creative Director", "action": "Proposal", "message": "For a Tech Nerd watching Succession, the Apple Pro Display XDR represents the intersection of tech excellence and wealth. At $4,999 (plus $999 for the stand), it's the Roy family of monitors." },
+      { "agent": "Historian", "action": "Validation", "message": "✅ APPROVED. The Pro Display XDR launched December 2019, available through 2020. Its controversial $999 stand became a tech meme — perfect for a show about obscene wealth." },
+      { "agent": "Cinematographer", "action": "Visual Spec", "message": "The XDR's edge-to-edge Retina display and aluminum enclosure match Succession's sleek corporate interiors. The nano-texture glass finish eliminates reflections. Scale at 80%." },
+      { "agent": "Foley Artist", "action": "Audio Spec", "message": "Soft aluminum resonance when product appears at -28dB — the sound of premium materials. No fan noise (it's fanless). Just the subtle hum of excellence." }
+    ],
+    "product": {
+      "name": "Apple Pro Display XDR",
+      "price": 4999.00,
+      "description": "32-inch Retina 6K display with Extreme Dynamic Range. P3 wide color, 1000 nits sustained brightness. The display that costs more than most people's cars.",
+      "link": "https://www.apple.com/pro-display-xdr",
+      "imageUrl": "/products/pro_display_xdr.webp",
+      "category": "Professional Displays"
+    }
+  }
+]
