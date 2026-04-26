@@ -14,4 +14,8 @@ frontend/out/˝
 
 # Hardware/OS
 .vscode/
-.idea/backend/assets/uploads/
+.idea/
+
+# SceneShift Assets
+backend/assets/
+backend/app/db/data/*.json

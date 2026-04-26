@@ -1,8 +1,12 @@
+import certifi
 from motor.motor_asyncio import AsyncIOMotorClient
 from app.core.config import settings
 
 # MongoDB Connection
-client = AsyncIOMotorClient(settings.mongodb_uri)
+client = AsyncIOMotorClient(
+    settings.mongodb_uri,
+    tlsCAFile=certifi.where()
+)
 db = client.sceneshift_db
 scene_vault = db.scene_vault
 
