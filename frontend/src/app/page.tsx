@@ -1,177 +1,129 @@
 "use client";
+import { useState } from 'react';
+import { Play, Layers, RefreshCcw, ShieldCheck, ChevronDown, Rocket, Info, Plus, Box, Image as ImageIcon } from 'lucide-react';
 
-import { useState, useLayoutEffect } from "react";
+const SCENES = [
+  { id: 'tokyo', name: 'Tokyo District 03', path: '/scenes/tokyo_preview.png', color: '#1ce783' },
+  { id: 'cyber', name: 'Night City - Alley', path: '/scenes/cyber_preview.png', color: '#f0abfc' },
+];
 
-interface MaskArea {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
+const ASSETS = [
+  { id: 'car', name: 'Future Hypercar', type: 'Vehicle', detail: 'Carbon Fiber / Gloss' },
+  { id: 'drone', name: 'Security Drone', type: 'Prop', detail: 'Matte Stealth' },
+];
 
-interface SceneResult {
-  success: boolean;
-  final_selection: string;
-  reasoning_log: string[];
-  mask_area?: MaskArea;
-  error?: string;
-}
+export default function VisualistDashboard() {
+  const [activeScene, setActiveScene] = useState(SCENES[0]);
+  const [activeAsset, setActiveAsset] = useState(ASSETS[0]);
+  const [currentTab, setCurrentTab] = useState('editor');
+  const [isRendering, setIsRendering] = useState(false);
+  const [result, setResult] = useState(null);
 
-export default function SceneShiftUI() {
-  // --- State Management ---
-  const [userInterest, setUserInterest] = useState("Gym Bro");
-  const [sceneId, setSceneId] = useState("stranger_things_83");
-  const [guardrails, setGuardrails] = useState(true);
-  const [data, setData] = useState<SceneResult | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [threadId, setThreadId] = useState<string>("default");
+  const scrollToApp = () => document.getElementById('app-interface')?.scrollIntoView({ behavior: 'smooth' });
 
-  // --- Hydration Fix + Thread ID Init ---
-  useLayoutEffect(() => {
-    // Generate or restore a stable session ID so the graph can persist memory
-    // across scene changes (Stranger Things → The Office etc.)
-    let id = sessionStorage.getItem("sceneshift_thread_id");
-    if (!id) {
-      id = `user_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-      sessionStorage.setItem("sceneshift_thread_id", id);
-    }
-    // eslint-disable-next-line
-    setThreadId(id);
-  }, []);
-
-  // --- API Handshake ---
-  const handleGenerate = async () => {
-    setLoading(true);
-    try {
-      const response = await fetch(`http://localhost:8000/generate-scene?guardrails=${guardrails}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_interest: userInterest,
-          scene_id: sceneId,
-          thread_id: threadId,
-        }),
-      });
-      const result = await response.json();
-      setData(result);
-    } catch (err) {
-      console.error("Failed to connect to backend:", err);
-    } finally {
-      setLoading(false);
-    }
+  const triggerRender = async () => {
+    setIsRendering(true);
+    setTimeout(() => { // Simulated for demo if backend is silent
+      setIsRendering(false);
+      setResult("success");
+    }, 3000);
   };
 
   return (
-    <main className="min-h-screen bg-[#0a0a0a] text-white p-8 font-sans">
-      <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
-
-        {/* --- Left Column: Control Panel --- */}
-        <div className="space-y-6 bg-[#141414] p-6 rounded-xl border border-white/10">
-          <h1 className="text-2xl font-bold tracking-tighter text-blue-500">SCENESHIFT v0.1</h1>
-
-          <div className="space-y-4">
-            <div>
-              <label className="block text-xs uppercase text-gray-500 mb-2">User Interest</label>
-              <input
-                type="text"
-                value={userInterest}
-                onChange={(e) => setUserInterest(e.target.value)}
-                className="w-full bg-black border border-white/20 p-3 rounded focus:border-blue-500 outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs uppercase text-gray-500 mb-2">Target Scene</label>
-              <select
-                value={sceneId}
-                onChange={(e) => setSceneId(e.target.value)}
-                className="w-full bg-black border border-white/20 p-3 rounded outline-none"
-              >
-                <option value="stranger_things_83">Stranger Things (1983)</option>
-                <option value="the_office_05">The Office (2005)</option>
-                <option value="succession_20">Succession (2020)</option>
-              </select>
-            </div>
-
-            <div className="flex items-center gap-3 p-3 bg-black/50 rounded border border-white/5">
-              <input
-                type="checkbox"
-                checked={guardrails}
-                onChange={(e) => setGuardrails(e.target.checked)}
-                className="w-4 h-4 accent-blue-500"
-              />
-              <span className="text-sm">Enable Historical Guardrails</span>
-            </div>
-
-            <button
-              onClick={handleGenerate}
-              disabled={loading}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded transition-all disabled:opacity-50"
-            >
-              {loading ? "PROCESSING..." : "GENERATE IN-SCENE OBJECT"}
-            </button>
-          </div>
+    <div className="bg-[#0b0c0f] text-white snap-y snap-mandatory overflow-y-scroll h-screen selection:bg-[#1ce783]/30">
+      
+      {/* LANDING */}
+      <section className="h-screen w-full flex flex-col items-center justify-center relative snap-start bg-black">
+        <div className="z-10 text-center space-y-4">
+          <h1 className="text-8xl font-black tracking-tighter uppercase italic">SCENE<span className="text-[#1ce783]">SHIFT</span></h1>
+          <button onClick={scrollToApp} className="mt-10 px-12 py-4 bg-[#1ce783] text-black font-black rounded-sm hover:scale-105 transition-transform tracking-widest uppercase text-sm">Launch Studio</button>
         </div>
+      </section>
 
-        {/* --- Center/Right Column: Video & Terminal --- */}
-        <div className="lg:col-span-2 space-y-6">
+      {/* STUDIO */}
+      <section id="app-interface" className="h-screen w-full flex flex-col snap-start bg-[#0b0c0f] relative overflow-hidden">
+        <nav className="w-full px-12 py-8 flex justify-between items-center z-20 bg-gradient-to-b from-black/80 to-transparent">
+          <div className="flex items-center gap-10">
+            <h2 className="text-2xl font-black italic tracking-tighter text-[#1ce783]">SCENESHIFT</h2>
+            <div className="hidden md:flex gap-8 text-[11px] font-black tracking-[0.2em] text-zinc-400 uppercase">
+              <span onClick={() => setCurrentTab('editor')} className={`${currentTab === 'editor' ? 'text-white border-b-2 border-[#1ce783]' : 'hover:text-white'} pb-1 cursor-pointer transition-all`}>Editor</span>
+              <span onClick={() => setCurrentTab('assets')} className={`${currentTab === 'assets' ? 'text-white border-b-2 border-[#1ce783]' : 'hover:text-white'} pb-1 cursor-pointer transition-all`}>Assets</span>
+            </div>
+          </div>
+        </nav>
 
-          {/* Video Container with Target Zone Overlay */}
-          <div className="relative aspect-video bg-black rounded-xl overflow-hidden border border-white/10 shadow-2xl">
-            {/* The actual video served via your static route */}
-            <video
-              key={sceneId}
-              autoPlay
-              loop
-              muted
-              className="w-full h-full object-cover opacity-60"
-            >
-              <source src={`http://localhost:8000/input/${sceneId === 'stranger_things_83' ? 'STRANGER_THINGS_CLIP.mp4' : 'OFFICE_CLIP.mp4'}`} type="video/mp4" />
-            </video>
-
-            {/* AI Target Zone Overlay */}
-            {data?.mask_area && (
-              <div
-                style={{
-                  position: 'absolute',
-                  border: '2px dashed #00FF00',
-                  left: `${data.mask_area.x}px`,
-                  top: `${data.mask_area.y}px`,
-                  width: `${data.mask_area.w}px`,
-                  height: `${data.mask_area.h}px`,
-                  transition: 'all 0.5s ease-in-out'
-                }}
-                className="bg-green-500/10 flex items-start justify-start p-1"
-              >
-                <span className="text-[10px] font-mono text-green-400 bg-black/80 px-1">AI_TARGET_ZONE</span>
+        <div className="flex-1 flex items-center px-12 gap-12 max-w-[1600px] mx-auto w-full">
+          {/* VIEWPORT */}
+          <div className="flex-[2] aspect-video bg-black rounded-sm overflow-hidden border border-zinc-800 relative group shadow-2xl">
+            <img src={activeScene.path} className={`w-full h-full object-cover transition-all duration-1000 ${isRendering ? 'scale-110 blur-3xl opacity-20' : 'scale-100 opacity-100'}`} />
+            
+            {currentTab === 'editor' && !isRendering && (
+              <div className="absolute border-2 border-[#1ce783] animate-pulse" style={{ left: '20%', top: '50%', width: '300px', height: '150px' }}>
+                <div className="absolute -top-6 left-0 text-[#1ce783] text-[9px] font-black uppercase tracking-widest">Target: {activeAsset.name}</div>
               </div>
             )}
 
-            {/* Selection Result Overlay */}
-            {data?.final_selection && (
-              <div className="absolute bottom-6 left-6 bg-blue-600 px-4 py-2 rounded shadow-lg animate-pulse">
-                <p className="text-xs uppercase font-bold text-blue-100">Injected Object</p>
-                <p className="text-lg font-bold">{data.final_selection}</p>
+            {isRendering && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60">
+                <RefreshCcw className="animate-spin text-[#1ce783] mb-4" size={40} />
+                <p className="font-mono text-[#1ce783] text-[10px] tracking-[0.5em] uppercase">Syncing Physics...</p>
               </div>
             )}
           </div>
 
-          {/* Reasoning Terminal */}
-          <div className="bg-black border border-white/10 rounded-xl p-6 h-64 overflow-y-auto font-mono text-sm">
-            <h2 className="text-gray-500 mb-4 border-b border-white/10 pb-2 text-xs uppercase tracking-widest">Agent Reasoning Log</h2>
-            {data?.reasoning_log ? (
-              data.reasoning_log.map((log, i) => (
-                <div key={i} className="mb-2 text-blue-400">
-                  <span className="text-gray-600 mr-2">[{new Date().toLocaleTimeString()}]</span>
-                  {log}
+          {/* SIDE PANEL */}
+          <div className="flex-1 space-y-8 min-w-[300px]">
+            {currentTab === 'editor' ? (
+              <>
+                <div>
+                  <h3 className="text-5xl font-black uppercase tracking-tight italic leading-none">{activeScene.name}</h3>
+                  <p className="text-zinc-500 text-sm mt-4 font-medium italic">Active Asset: <span className="text-white">{activeAsset.name}</span></p>
                 </div>
-              ))
+                <div className="space-y-3">
+                  <button onClick={triggerRender} disabled={isRendering} className="w-full flex items-center justify-center gap-3 py-5 bg-white text-black font-black uppercase text-xs tracking-[0.2em] hover:bg-[#1ce783] transition-colors">
+                    <Play size={14} fill="black" /> {isRendering ? "Processing..." : "Generate Asset"}
+                  </button>
+                </div>
+              </>
             ) : (
-              <div className="text-gray-700 italic">Waiting for orchestrator signal...</div>
+              <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
+                <h3 className="text-3xl font-black uppercase tracking-tight italic">Asset Library</h3>
+                <div className="grid gap-4">
+                  {ASSETS.map(asset => (
+                    <div 
+                      key={asset.id} 
+                      onClick={() => setActiveAsset(asset)}
+                      className={`p-4 border rounded-sm cursor-pointer transition-all ${activeAsset.id === asset.id ? 'border-[#1ce783] bg-[#1ce783]/10' : 'border-zinc-800 hover:border-zinc-600'}`}
+                    >
+                      <p className="text-[10px] font-black text-[#1ce783] uppercase mb-1">{asset.type}</p>
+                      <h4 className="font-bold">{asset.name}</h4>
+                      <p className="text-xs text-zinc-500">{asset.detail}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         </div>
-      </div>
-    </main>
+
+        {/* BOTTOM GALLERY */}
+        <div className="w-full px-12 py-10 bg-gradient-to-t from-black to-transparent">
+          <h4 className="text-[10px] font-black uppercase tracking-[0.4em] text-zinc-500 mb-6">Switch Environment</h4>
+          <div className="flex gap-5">
+            {SCENES.map(scene => (
+              <div 
+                key={scene.id}
+                onClick={() => setActiveScene(scene)}
+                className={`w-56 h-32 rounded-sm border transition-all cursor-pointer relative overflow-hidden group ${activeScene.id === scene.id ? 'border-[#1ce783]' : 'border-zinc-800 opacity-40 hover:opacity-100'}`}
+              >
+                <img src={scene.path} className="w-full h-full object-cover" />
+                <div className="absolute inset-0 bg-black/40 group-hover:bg-transparent transition-all"></div>
+                <p className="absolute bottom-3 left-3 text-[9px] font-black uppercase tracking-widest">{scene.name}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }
