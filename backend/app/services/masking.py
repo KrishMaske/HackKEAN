@@ -441,6 +441,30 @@ def render_overlay_video(frames: List[np.ndarray], masks: List[np.ndarray], outp
     writer.release()
 
 
+def grabcut_product_mask(frame: np.ndarray, bbox: list) -> np.ndarray:
+    """
+    Use OpenCV GrabCut to extract a pixel-perfect mask of the object inside the bounding box.
+    bbox is [x0, y0, x1, y1]
+    """
+    x0, y0, x1, y1 = bbox
+    w, h = x1 - x0, y1 - y0
+    if w <= 0 or h <= 0:
+        return np.zeros(frame.shape[:2], dtype=np.uint8)
+
+    mask = np.zeros(frame.shape[:2], np.uint8)
+    bgdModel = np.zeros((1, 65), np.float64)
+    fgdModel = np.zeros((1, 65), np.float64)
+    rect = (x0, y0, w, h)
+
+    try:
+        cv2.grabCut(frame, mask, rect, bgdModel, fgdModel, 5, cv2.GC_INIT_WITH_RECT)
+        mask2 = np.where((mask == 2) | (mask == 0), 0, 255).astype('uint8')
+        return mask2
+    except Exception as e:
+        print(f"[MASK] GrabCut failed: {e}")
+        return np.zeros(frame.shape[:2], dtype=np.uint8)
+
+
 def _detect_bbox_with_groq(frame: np.ndarray, product_name: str, frame_width: int, frame_height: int) -> Optional[list]:
     """
     Call Groq Vision on the given frame to get a fresh bounding box for the product.
@@ -451,9 +475,9 @@ def _detect_bbox_with_groq(frame: np.ndarray, product_name: str, frame_width: in
         import base64, json, re
         from app.core.config import settings
 
-        # Downscale frame for the API call (save tokens)
+        # Downscale frame for the API call (save tokens but keep enough detail for small objects)
         h, w = frame.shape[:2]
-        max_px = 512
+        max_px = 1024
         if max(h, w) > max_px:
             sc = max_px / max(h, w)
             small = cv2.resize(frame, (int(w * sc), int(h * sc)), interpolation=cv2.INTER_AREA)
@@ -541,15 +565,20 @@ def _detect_keyframe_bboxes(
 
     print(f"[MASK] Detecting product on {len(keyframe_indices)} keyframes (every {keyframe_interval} frames)...")
 
-    keyframe_bboxes = {}
+    # Always trust frame 0 from ingestion as the ground truth start point
+    keyframe_bboxes = {0: fallback_bbox}
+    print(f"[MASK]   Keyframe 0: {fallback_bbox} (from ingestion anchor)")
+
     for i, kf_idx in enumerate(keyframe_indices):
+        if kf_idx == 0:
+            continue
+            
         bbox = _detect_bbox_with_groq(frames[kf_idx], product_name, frame_width, frame_height)
         if bbox:
             keyframe_bboxes[kf_idx] = bbox
             print(f"[MASK]   Keyframe {kf_idx}: {bbox}")
         else:
-            keyframe_bboxes[kf_idx] = fallback_bbox
-            print(f"[MASK]   Keyframe {kf_idx}: product not found, using fallback {fallback_bbox}")
+            print(f"[MASK]   Keyframe {kf_idx}: product not found, skipping (will interpolate across gap)")
 
         # Small delay between API calls to avoid rate limits
         if i < len(keyframe_indices) - 1:
@@ -614,84 +643,144 @@ def generate_temporal_alpha_masks(
     proc_bbox = [bx0, by0, bx1, by1]  # [x0, y0, x1, y1] at processing resolution
     print(f"[MASK] Using product bbox (proc-res): {proc_bbox}")
 
-    # ── Step 2: Detect product bbox on keyframes (1 per second) ────────────────
-    # This gives us ground-truth correction points throughout the video,
-    # eliminating drift and handling scene cuts automatically.
-    BBOX_PAD = 0.30  # 30% padding around each detected bbox for inpainting context
+    # ── Step 2: Track with Lucas-Kanade sparse optical flow ──────────────────
+    # LK tracks feature points (corners) detected INSIDE the bbox on frame 0.
+    # The median displacement of all living points updates the bbox each frame.
+    # 
+    # Anti-drift measures:
+    #   1. Scene cut detection: reset to original bbox when the camera angle jumps
+    #   2. Periodic feature refresh (every 10 frames): re-detect features inside
+    #      the current bbox to prevent accumulated LK error
+    #   3. Keep bbox size constant (only translate, never shrink/grow)
 
-    def _pad_bbox(bbox, pad, w, h):
-        """Add padding around a bbox and clamp to frame bounds."""
-        x0, y0, x1, y1 = bbox
-        bw, bh = x1 - x0, y1 - y0
-        px, py = int(bw * pad), int(bh * pad)
-        return [
-            max(0, x0 - px),
-            max(0, y0 - py),
-            min(w, x1 + px),
-            min(h, y1 + py),
-        ]
+    REFRESH_INTERVAL = 10  # re-detect features every N frames to fight drift
 
-    keyframe_bboxes = _detect_keyframe_bboxes(
-        frames, fps, prompt_text, proc_width, proc_height, proc_bbox
+    lk_params = dict(
+        winSize=(21, 21),
+        maxLevel=3,
+        criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.01),
     )
 
-    # Pad all keyframe bboxes
-    padded_keyframes = {}
-    for kf_idx, bbox in keyframe_bboxes.items():
-        padded_keyframes[kf_idx] = _pad_bbox(bbox, BBOX_PAD, proc_width, proc_height)
+    bbox_w = bx1 - bx0  # lock the width/height — only translate the box
+    bbox_h = by1 - by0
 
-    # Sort keyframe indices for interpolation
-    kf_sorted = sorted(padded_keyframes.keys())
-    print(f"[MASK] {len(kf_sorted)} keyframes with padded bboxes ready.")
+    def _detect_features(gray_frame, x0, y0, x1, y1):
+        """Detect good features to track inside a bbox region."""
+        roi_mask = np.zeros(gray_frame.shape[:2], dtype=np.uint8)
+        roi_mask[max(0,y0):min(gray_frame.shape[0],y1),
+                 max(0,x0):min(gray_frame.shape[1],x1)] = 255
+        pts = cv2.goodFeaturesToTrack(
+            gray_frame, maxCorners=80, qualityLevel=0.03, minDistance=4, mask=roi_mask
+        )
+        if pts is None or len(pts) == 0:
+            # Grid fallback
+            xs = np.linspace(x0 + 2, x1 - 2, 7, dtype=np.float32)
+            ys = np.linspace(y0 + 2, y1 - 2, 7, dtype=np.float32)
+            gx, gy = np.meshgrid(xs, ys)
+            pts = np.stack([gx.ravel(), gy.ravel()], axis=1).reshape(-1, 1, 2)
+        return pts
 
-    # ── Step 3: Generate masks for every frame ────────────────────────────────
-    # For keyframes: use the Groq-detected (padded) bbox directly.
-    # Between keyframes: interpolate the bbox linearly between the two nearest keyframes.
-    # This is simple, fast, and drift-free since every keyframe resets the position.
-
-    def _interpolate_bbox(idx, kf_sorted, padded_keyframes):
-        """Linearly interpolate bbox between the two nearest keyframes."""
-        # Find surrounding keyframes
-        prev_kf = kf_sorted[0]
-        next_kf = kf_sorted[-1]
-        for i, kf in enumerate(kf_sorted):
-            if kf >= idx:
-                next_kf = kf
-                prev_kf = kf_sorted[max(0, i - 1)]
-                break
-
-        if prev_kf == next_kf:
-            return padded_keyframes[prev_kf]
-
-        # Linear interpolation factor
-        t = (idx - prev_kf) / max(1, next_kf - prev_kf)
-        b0 = padded_keyframes[prev_kf]
-        b1 = padded_keyframes[next_kf]
-        return [
-            int(b0[0] + (b1[0] - b0[0]) * t),
-            int(b0[1] + (b1[1] - b0[1]) * t),
-            int(b0[2] + (b1[2] - b0[2]) * t),
-            int(b0[3] + (b1[3] - b0[3]) * t),
-        ]
+    anchor_frame = frames[anchor_frame_index]
+    anchor_gray = cv2.cvtColor(anchor_frame, cv2.COLOR_BGR2GRAY)
+    pts       = _detect_features(anchor_gray, bx0, by0, bx1, by1)
+    prev_gray = anchor_gray.copy()
+    cur_cx    = (bx0 + bx1) / 2.0  # track the CENTER of the bbox (float for sub-pixel)
+    cur_cy    = (by0 + by1) / 2.0
 
     masks = [None] * len(frames)
+    
+    # GrabCut the anchor mask frame
+    anchor_gc_mask = grabcut_product_mask(anchor_frame, [bx0, by0, bx1, by1])
+    if anchor_gc_mask.sum() > 0:
+        masks[anchor_frame_index] = anchor_gc_mask
+    else:
+        masks[anchor_frame_index] = bbox_to_mask([bx0, by0, bx1, by1], proc_height, proc_width)
+
     total_frames = len(frames)
+    frames_since_refresh = 0
 
-    for idx in range(total_frames):
-        if idx % 50 == 0:
-            print(f"[MASK] Generating mask {idx}/{total_frames}...")
+    for idx in range(anchor_frame_index + 1, total_frames):
+        if idx % 10 == 0:
+            print(f"[MASK] Tracking and applying GrabCut {idx}/{total_frames}...")
 
-        bbox = _interpolate_bbox(idx, kf_sorted, padded_keyframes)
-        # Clamp
-        bbox[0] = max(0, bbox[0])
-        bbox[1] = max(0, bbox[1])
-        bbox[2] = min(proc_width,  bbox[2])
-        bbox[3] = min(proc_height, bbox[3])
+        curr_gray = cv2.cvtColor(frames[idx], cv2.COLOR_BGR2GRAY)
 
-        if bbox[2] > bbox[0] and bbox[3] > bbox[1]:
-            masks[idx] = bbox_to_mask(bbox, proc_height, proc_width)
+        # ── Scene cut detection ──────────────────────────────────────────
+        if is_shot_cut(frames[idx - 1], frames[idx]):
+            print(f"[MASK] Scene cut at frame {idx} -- resetting tracker to original bbox.")
+            # Reset bbox to original position (product reappears in a new shot)
+            cur_cx = (bx0 + bx1) / 2.0
+            cur_cy = (by0 + by1) / 2.0
+            pts = _detect_features(curr_gray, bx0, by0, bx1, by1)
+            frames_since_refresh = 0
+            
+            rx0 = max(0, int(cur_cx - bbox_w / 2))
+            ry0 = max(0, int(cur_cy - bbox_h / 2))
+            rx1 = min(proc_width,  rx0 + bbox_w)
+            ry1 = min(proc_height, ry0 + bbox_h)
+            
+            gc_mask = grabcut_product_mask(frames[idx], [rx0, ry0, rx1, ry1])
+            if gc_mask.sum() > 0:
+                masks[idx] = gc_mask
+            else:
+                masks[idx] = bbox_to_mask([rx0, ry0, rx1, ry1], proc_height, proc_width)
+            
+            prev_gray = curr_gray
+            continue
+
+        # ── Periodic feature refresh to combat drift ─────────────────────
+        frames_since_refresh += 1
+        if frames_since_refresh >= REFRESH_INTERVAL and pts is not None:
+            rx0 = max(0, int(cur_cx - bbox_w / 2))
+            ry0 = max(0, int(cur_cy - bbox_h / 2))
+            rx1 = min(proc_width,  rx0 + bbox_w)
+            ry1 = min(proc_height, ry0 + bbox_h)
+            pts = _detect_features(curr_gray, rx0, ry0, rx1, ry1)
+            frames_since_refresh = 0
+
+        # ── LK optical flow tracking ─────────────────────────────────────
+        if pts is not None and len(pts) >= 3:
+            new_pts, status, _ = cv2.calcOpticalFlowPyrLK(
+                prev_gray, curr_gray, pts, None, **lk_params
+            )
+            good_new = new_pts[status.ravel() == 1]
+            good_old = pts[status.ravel() == 1]
+
+            if len(good_new) >= 3:
+                # Median displacement (robust to outliers from people moving in front)
+                dx = float(np.median(good_new[:, 0, 0] - good_old[:, 0, 0]))
+                dy = float(np.median(good_new[:, 0, 1] - good_old[:, 0, 1]))
+
+                cur_cx += dx
+                cur_cy += dy
+
+                pts = good_new.reshape(-1, 1, 2)
+            else:
+                # Too few points survived this frame — hold position, try to re-detect
+                print(f"[MASK] LK lost tracking at frame {idx} -- re-detecting features.")
+                rx0 = max(0, int(cur_cx - bbox_w / 2))
+                ry0 = max(0, int(cur_cy - bbox_h / 2))
+                rx1 = min(proc_width,  rx0 + bbox_w)
+                ry1 = min(proc_height, ry0 + bbox_h)
+                pts = _detect_features(curr_gray, rx0, ry0, rx1, ry1)
+                frames_since_refresh = 0
+
+        # ── Convert center + fixed size -> GrabCut mask ──────────────────
+        rx0 = max(0, int(cur_cx - bbox_w / 2))
+        ry0 = max(0, int(cur_cy - bbox_h / 2))
+        rx1 = min(proc_width,  rx0 + bbox_w)
+        ry1 = min(proc_height, ry0 + bbox_h)
+
+        if rx1 > rx0 and ry1 > ry0:
+            gc_mask = grabcut_product_mask(frames[idx], [rx0, ry0, rx1, ry1])
+            if gc_mask.sum() > 0:
+                masks[idx] = gc_mask
+            else:
+                masks[idx] = bbox_to_mask([rx0, ry0, rx1, ry1], proc_height, proc_width)
         else:
             masks[idx] = np.zeros((proc_height, proc_width), dtype=np.uint8)
+
+        prev_gray = curr_gray
 
     # Upscale masks from processing resolution back to original resolution
     output_masks = []

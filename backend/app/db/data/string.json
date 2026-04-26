@@ -1,17 +1,17 @@
 {
     "show_id": "string",
-    "filepath": "assets/uploads/cocacola_strangerthings.mp4",
-    "production_year": 1970,
-    "location": "Psychiatric Ward",
-    "target_object": "coca cola can",
-    "video_width": 1920,
-    "video_height": 1080,
-    "video_fps": 30.0,
-    "total_frames": 248,
+    "filepath": "assets/uploads/STRANGER_THINGS_CLIP.mp4",
+    "production_year": 1990,
+    "location": "Dining Room",
+    "target_object": "kfc bucket",
+    "video_width": 854,
+    "video_height": 480,
+    "video_fps": 23.976023976023978,
+    "total_frames": 336,
     "initial_bounding_box": [
-        919,
-        724,
-        1000,
-        884
+        366,
+        295,
+        487,
+        367
     ]
 }
