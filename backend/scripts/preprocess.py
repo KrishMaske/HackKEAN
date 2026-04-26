@@ -103,7 +103,7 @@ def extract_keyframes(video_path: str, interval_seconds: float = 2.0) -> list:
     }
 
 
-def analyze_frames_with_groq(frames: list, target_object: str, groq_client) -> list:
+def analyze_frames_with_groq(frames: list, target_object: str, groq_client, video_meta: dict) -> list:
     """Send frames to Groq Vision for product detection."""
     results = []
     batch_size = 5  # Process in small batches to stay within rate limits
@@ -119,7 +119,7 @@ Return a JSON object with exactly these fields:
   "product_detected": true/false,
   "product_name": "exact product name or null",
   "confidence": 0.0 to 1.0,
-  "bbox": [x1, y1, x2, y2] as pixel coordinates or null if not detected,
+  "bbox": [x1, y1, x2, y2] as ABSOLUTE PIXEL coordinates (e.g. [120, 200, 450, 380]) or null if not detected,
   "description": "brief visual description of what you see"
 }}
 
@@ -148,6 +148,22 @@ Be strict: only report the product if you actually see it in the frame."""
 
                 result_text = response.choices[0].message.content
                 parsed = parse_json_response(result_text)
+
+                # Fix bbox if Groq hallucinated normalized floats
+                if parsed.get("bbox"):
+                    b = parsed["bbox"]
+                    if len(b) == 4 and all(isinstance(v, (int, float)) for v in b):
+                        # If values are < 2, they are likely normalized floats
+                        if max(b) <= 2.0:
+                            width = video_meta.get("width", 1280)
+                            height = video_meta.get("height", 720)
+                            parsed["bbox"] = [
+                                int(b[0] * width),
+                                int(b[1] * height),
+                                int(b[2] * width),
+                                int(b[3] * height)
+                            ]
+                
                 parsed["frame_idx"] = frame_data["frame_idx"]
                 parsed["timestamp"] = frame_data["timestamp"]
                 results.append(parsed)
@@ -243,7 +259,7 @@ def main():
 
     # Step 2: Analyze with Groq Vision
     print(f"\n[2/3] Analyzing {len(frames)} frames with Groq Vision...")
-    frame_results = analyze_frames_with_groq(frames, args.target_object, groq_client)
+    frame_results = analyze_frames_with_groq(frames, args.target_object, groq_client, video_meta)
 
     # Step 3: Build segments and save
     print("\n[3/3] Building segments...")
@@ -254,7 +270,7 @@ def main():
     output = {
         "show_id": args.show_id,
         "target_object": args.target_object,
-        "video_path": args.video_path,
+        "video_filepath": args.video_path,
         "video_meta": video_meta,
         "segments": segments,
         "frame_results": [

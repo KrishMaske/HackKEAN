@@ -58,7 +58,7 @@ def main():
     os.makedirs(MASKS_DIR, exist_ok=True)
 
     # Get the video path and bbox from scene data
-    video_path = scene_data.get("video_path")
+    video_path = scene_data.get("video_filepath") or scene_data.get("video_path")
     if not video_path or not os.path.exists(video_path):
         print(f"❌ Video file not found at {video_path}")
         sys.exit(1)
@@ -76,27 +76,37 @@ def main():
         print("⚠️  No bounding box available — cannot generate mask")
         return
 
+    anchor_frame_index = best_segment.get("start_frame", 0)
+    end_frame_index = best_segment.get("end_frame", -1)
+
     print(f"\n[1/2] Generating temporal mask video...")
     print(f"  Bounding box: {bbox}")
     print(f"  Segment: {best_segment.get('start_time', 0):.1f}s - {best_segment.get('end_time', 0):.1f}s")
+    print(f"  Start Frame: {anchor_frame_index}")
     print(f"  Product: {best_segment.get('product_name', 'unknown')}")
 
     try:
         from app.services.masking import generate_mask_video
+        
         generate_mask_video(
             show_id=args.show_id,
-            video_path=video_path,
-            coordinates=bbox,
+            anchor_frame_index=anchor_frame_index,
+            end_frame_index=end_frame_index
         )
         print(f"\n✅ Mask video saved to {mask_path}")
-    except ImportError as e:
-        print(f"\n⚠️  Could not import masking module: {e}")
-        print("   This is expected if OpenCV or SAM3 dependencies aren't installed.")
-        print("   The mask video should be generated manually or pre-existing.")
-    except Exception as e:
-        print(f"\n❌ Masking failed: {e}")
-        import traceback
-        traceback.print_exc()
+        
+    except TypeError as e:
+        print(f"⚠️  Parameter mismatch: {e}. Retrying with alternate naming...")
+        try:
+            generate_mask_video(
+                show_id=args.show_id,
+                bbox=bbox,
+                anchor_frame_index=anchor_frame_index
+            )
+        except Exception as retry_e:
+            print(f"❌ Critical failure in masking service: {retry_e}")
+            import traceback
+            traceback.print_exc()
 
     print(f"\n   Next step: python -m scripts.run_agents\n")
 

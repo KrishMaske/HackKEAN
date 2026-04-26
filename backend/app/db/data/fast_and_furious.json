@@ -1,0 +1,150 @@
+{
+  "show_id": "fast_and_furious",
+  "target_object": "sports car",
+  "video_filepath": "assets/input/FastAndFurious.mp4",
+  "video_meta": {
+    "total_frames": 499,
+    "fps": 60.0842865743528,
+    "width": 1280,
+    "height": 720,
+    "duration": 8.305
+  },
+  "segments": [
+    {
+      "start_frame": 120,
+      "end_frame": -1,
+      "confidence": 1.0,
+      "bbox": [
+        160,
+        480,
+        520,
+        710
+      ],
+      "product_name": "sports car"
+    }
+  ],
+  "frame_results": [
+    {
+      "product_detected": false,
+      "detections": [],
+      "description": "The image shows two men walking in front of a bike rack with multiple bicycles parked. There are no sports cars visible in the image.",
+      "frame_idx": 0,
+      "timestamp": 0.0
+    },
+    {
+      "product_detected": false,
+      "detections": [],
+      "description": "No sports car detected in the image. The image shows a group of people walking in front of a rack of bicycles.",
+      "frame_idx": 60,
+      "timestamp": 0.999
+    },
+    {
+      "product_detected": true,
+      "detections": [
+        {
+          "product_name": "sports car",
+          "confidence": 0.9,
+          "bbox": [
+            517,
+            346,
+            745,
+            557
+          ]
+        }
+      ],
+      "description": "An orange sports car is parked on the side of the road.",
+      "frame_idx": 120,
+      "timestamp": 1.997
+    },
+    {
+      "product_detected": true,
+      "detections": [
+        {
+          "product_name": "sports car",
+          "confidence": 1.0,
+          "bbox": [
+            165,
+            344,
+            502,
+            609
+          ]
+        }
+      ],
+      "description": "An orange sports car is parked on the side of the road, with its rear end facing the camera. The car has a distinctive design with a curved body and large wheels. A group of people in black suits are standing around the car, seemingly admiring it.",
+      "frame_idx": 180,
+      "timestamp": 2.996
+    },
+    {
+      "product_detected": true,
+      "detections": [
+        {
+          "product_name": "Honda NSX",
+          "confidence": 0.9,
+          "bbox": [
+            143,
+            348,
+            671,
+            654
+          ]
+        }
+      ],
+      "description": "An orange sports car, likely a Honda NSX, is parked on the side of a road surrounded by a group of people in dark clothing.",
+      "frame_idx": 240,
+      "timestamp": 3.994
+    },
+    {
+      "product_detected": true,
+      "detections": [
+        {
+          "product_name": "Honda S2000",
+          "confidence": 0.95,
+          "bbox": [
+            143,
+            346,
+            745,
+            609
+          ]
+        }
+      ],
+      "description": "An orange Honda S2000 sports car is parked on the street, surrounded by pedestrians.",
+      "frame_idx": 300,
+      "timestamp": 4.993
+    },
+    {
+      "product_detected": true,
+      "detections": [
+        {
+          "product_name": "Lotus Elise",
+          "confidence": 0.9,
+          "bbox": [
+            94,
+            346,
+            669,
+            630
+          ]
+        }
+      ],
+      "description": "An orange Lotus Elise sports car is parked on the street, with its top down. The car has a sleek design and is surrounded by pedestrians.",
+      "frame_idx": 360,
+      "timestamp": 5.992
+    },
+    {
+      "frame_idx": 420,
+      "timestamp": 6.99,
+      "product_detected": false,
+      "error": "Error code: 429 - {'error': {'message': 'Rate limit reached for model `meta-llama/llama-4-scout-17b-16e-instruct` in organization `org_01kq4dp1zzf5qt2snxst53asem` service tier `on_demand` on tokens per minute (TPM): Limit 30000, Used 27117, Requested 3041. Please try again in 316ms. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing', 'type': 'tokens', 'code': 'rate_limit_exceeded'}}"
+    },
+    {
+      "frame_idx": 480,
+      "timestamp": 7.989,
+      "product_detected": false,
+      "error": "Error code: 429 - {'error': {'message': 'Rate limit reached for model `meta-llama/llama-4-scout-17b-16e-instruct` in organization `org_01kq4dp1zzf5qt2snxst53asem` service tier `on_demand` on tokens per minute (TPM): Limit 30000, Used 27300, Requested 3041. Please try again in 682ms. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing', 'type': 'tokens', 'code': 'rate_limit_exceeded'}}"
+    }
+  ],
+  "initial_bounding_box": [
+    160,
+    480,
+    520,
+    710
+  ]
+}

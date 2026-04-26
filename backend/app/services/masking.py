@@ -441,12 +441,85 @@ def render_overlay_video(frames: List[np.ndarray], masks: List[np.ndarray], outp
     writer.release()
 
 
-def grabcut_product_mask(frame: np.ndarray, bbox: list) -> np.ndarray:
+def _extract_color_keyword(prompt: str) -> Optional[str]:
+    """Extract a color keyword from the prompt for HSV-guided masking."""
+    colors = ["orange", "red", "blue", "green", "yellow", "white", "black", "silver", "gold"]
+    prompt_lower = prompt.lower()
+    for color in colors:
+        if color in prompt_lower:
+            return color
+    if "kfc" in prompt_lower:
+        return "red"
+    return None
+
+
+def _build_color_mask(frame: np.ndarray, color: str) -> np.ndarray:
     """
-    Use OpenCV GrabCut to extract a pixel-perfect mask of the object inside the bounding box.
-    bbox is [x0, y0, x1, y1]
+    Build a wide-range HSV color mask that accounts for lighting variation.
+    Returns a binary mask (0/255) of pixels matching the target color.
+    Uses multiple HSV ranges to catch shadows, normal, and highlight variants.
     """
-    x0, y0, x1, y1 = bbox
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    combined = np.zeros(frame.shape[:2], dtype=np.uint8)
+
+    if color == "orange":
+        # Orange is tricky — shadows push it toward red, highlights push it toward yellow/white.
+        # We use 3 overlapping ranges to capture the full spectrum.
+        ranges = [
+            # Deep orange / shadowed orange (reddish)
+            (np.array([0, 40, 40]),   np.array([12, 255, 255])),
+            # Pure orange
+            (np.array([12, 40, 40]),  np.array([25, 255, 255])),
+            # Golden orange / highlighted orange (yellowish)
+            (np.array([25, 30, 80]),  np.array([35, 255, 255])),
+        ]
+    elif color == "red":
+        ranges = [
+            (np.array([0, 50, 50]),   np.array([10, 255, 255])),
+            (np.array([170, 50, 50]), np.array([180, 255, 255])),
+        ]
+    elif color == "blue":
+        ranges = [
+            (np.array([90, 40, 40]),  np.array([130, 255, 255])),
+        ]
+    elif color == "yellow":
+        ranges = [
+            (np.array([20, 40, 80]),  np.array([40, 255, 255])),
+        ]
+    elif color == "green":
+        ranges = [
+            (np.array([35, 40, 40]),  np.array([85, 255, 255])),
+        ]
+    else:
+        return np.ones(frame.shape[:2], dtype=np.uint8) * 255  # no filter
+
+    for lower, upper in ranges:
+        combined = cv2.bitwise_or(combined, cv2.inRange(hsv, lower, upper))
+
+    return combined
+
+
+def grabcut_product_mask(frame: np.ndarray, bbox: list, prompt: str = "") -> np.ndarray:
+    """
+    Robust product mask extraction combining GrabCut with color-guided
+    morphological cleanup.  Designed to handle:
+      1.  Lighting variation (shadows / highlights shift hue)
+      2.  Partial occlusion (pedestrians walking in front)
+      3.  Non-uniform object colours (chrome trim, black skirts)
+
+    Strategy
+    --------
+    a) Run GrabCut to get a coarse foreground mask.
+    b) Build a wide-range HSV colour mask for the target product.
+    c) Intersect GrabCut foreground with the colour mask — this removes
+       pedestrians / other foreground objects that GrabCut picked up.
+    d) Apply aggressive morphological closing to bridge gaps caused by
+       chrome, reflections, and occluders' edges.
+    e) Keep only the largest connected component (the car body) and fill
+       its convex hull to recover regions hidden behind pedestrians.
+    f) Re-intersect with the bbox to avoid leaking outside the tracked area.
+    """
+    x0, y0, x1, y1 = [int(v) for v in bbox]
     w, h = x1 - x0, y1 - y0
     if w <= 0 or h <= 0:
         return np.zeros(frame.shape[:2], dtype=np.uint8)
@@ -458,8 +531,71 @@ def grabcut_product_mask(frame: np.ndarray, bbox: list) -> np.ndarray:
 
     try:
         cv2.grabCut(frame, mask, rect, bgdModel, fgdModel, 5, cv2.GC_INIT_WITH_RECT)
-        mask2 = np.where((mask == 2) | (mask == 0), 0, 255).astype('uint8')
-        return mask2
+        gc_fg = np.where((mask == 1) | (mask == 3), 255, 0).astype(np.uint8)
+
+        color = _extract_color_keyword(prompt)
+        if color is None:
+            return gc_fg
+
+        # ── Step 1: Build colour mask ────────────────────────────────────
+        color_mask = _build_color_mask(frame, color)
+
+        # ── Step 2: Intersect GrabCut foreground with colour ─────────────
+        #   This removes people/objects that GrabCut wrongly marked as FG.
+        colour_fg = cv2.bitwise_and(gc_fg, color_mask)
+
+        # ── Step 3: Morphological closing ────────────────────────────────
+        #   Close gaps caused by chrome trim, reflections, window glass,
+        #   and thin occluder edges slicing through the car body.
+        kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (25, 25))
+        closed = cv2.morphologyEx(colour_fg, cv2.MORPH_CLOSE, kernel_close)
+
+        # Small dilation to recover pixels right at the colour-boundary
+        kernel_dilate = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+        closed = cv2.dilate(closed, kernel_dilate, iterations=1)
+
+        # ── Step 4: Largest connected component ──────────────────────────
+        #   The car will be the biggest blob; discard stray patches from
+        #   traffic cones, clothing highlights, etc.
+        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(closed, connectivity=8)
+        if num_labels <= 1:
+            # Nothing found by colour — fall back to pure GrabCut
+            return gc_fg
+
+        # label 0 is background — skip it
+        largest_label = 1 + np.argmax(stats[1:, cv2.CC_STAT_AREA])
+        largest_mask = np.where(labels == largest_label, 255, 0).astype(np.uint8)
+
+        # ── Step 5: Convex hull fill ─────────────────────────────────────
+        #   The convex hull recovers occluded interior regions that the
+        #   colour filter missed (e.g. the person standing in front of the
+        #   car door — the hull bridges across them).
+        contours, _ = cv2.findContours(largest_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if contours:
+            hull = cv2.convexHull(max(contours, key=cv2.contourArea))
+            hull_mask = np.zeros(frame.shape[:2], dtype=np.uint8)
+            cv2.fillConvexPoly(hull_mask, hull, 255)
+
+            # Clip the hull to the tracked bbox so we don't leak onto
+            # adjacent objects.
+            bbox_mask = np.zeros(frame.shape[:2], dtype=np.uint8)
+            bbox_mask[y0:y1, x0:x1] = 255
+            hull_mask = cv2.bitwise_and(hull_mask, bbox_mask)
+
+            # Now subtract any pixel where we *know* a person is standing:
+            # a person is a GrabCut-foreground pixel that is NOT the target
+            # colour.  By removing these from the hull we carve clean
+            # silhouettes around pedestrians.
+            people_mask = cv2.bitwise_and(gc_fg, cv2.bitwise_not(color_mask))
+            # Dilate the people mask a bit so the cut-out is clean
+            people_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))
+            people_mask = cv2.dilate(people_mask, people_kernel, iterations=1)
+            final_mask = cv2.bitwise_and(hull_mask, cv2.bitwise_not(people_mask))
+
+            return final_mask
+
+        return largest_mask
+
     except Exception as e:
         print(f"[MASK] GrabCut failed: {e}")
         return np.zeros(frame.shape[:2], dtype=np.uint8)
@@ -591,10 +727,11 @@ def generate_temporal_alpha_masks(
     show_id: str,
     manual_mask_path: Optional[str] = None,
     anchor_frame_index: int = 0,
+    end_frame_index: int = -1,
     prompt: Optional[str] = None,
 ) -> Dict[str, object]:
     scene = load_scene_metadata(show_id)
-    video_path = scene.get("filepath")
+    video_path = scene.get("filepath") or scene.get("video_filepath") or scene.get("video_path")
     if not video_path:
         raise ValueError("Scene metadata is missing a valid video filepath.")
 
@@ -619,6 +756,10 @@ def generate_temporal_alpha_masks(
     # Use the stored bbox from ingestion (already validated and clamped to frame bounds).
     # Re-map from original resolution → processing resolution.
     stored_bbox = scene.get("initial_bounding_box")
+    if not stored_bbox and "segments" in scene and scene["segments"]:
+        best_segment = max(scene["segments"], key=lambda s: s.get("confidence", 0))
+        stored_bbox = best_segment.get("bbox")
+        
     if not stored_bbox or len(stored_bbox) != 4 or any(v is None for v in stored_bbox):
         raise ValueError("Valid initial_bounding_box is required in scene metadata. Re-ingest the video.")
 
@@ -690,7 +831,7 @@ def generate_temporal_alpha_masks(
     masks = [None] * len(frames)
     
     # GrabCut the anchor mask frame
-    anchor_gc_mask = grabcut_product_mask(anchor_frame, [bx0, by0, bx1, by1])
+    anchor_gc_mask = grabcut_product_mask(anchor_frame, [bx0, by0, bx1, by1], prompt_text)
     if anchor_gc_mask.sum() > 0:
         masks[anchor_frame_index] = anchor_gc_mask
     else:
@@ -700,6 +841,9 @@ def generate_temporal_alpha_masks(
     frames_since_refresh = 0
 
     for idx in range(anchor_frame_index + 1, total_frames):
+        if end_frame_index != -1 and idx > end_frame_index:
+            masks[idx] = np.zeros((proc_height, proc_width), dtype=np.uint8)
+            continue
         if idx % 10 == 0:
             print(f"[MASK] Tracking and applying GrabCut {idx}/{total_frames}...")
 
@@ -707,11 +851,25 @@ def generate_temporal_alpha_masks(
 
         # ── Scene cut detection ──────────────────────────────────────────
         if is_shot_cut(frames[idx - 1], frames[idx]):
-            print(f"[MASK] Scene cut at frame {idx} -- resetting tracker to original bbox.")
-            # Reset bbox to original position (product reappears in a new shot)
-            cur_cx = (bx0 + bx1) / 2.0
-            cur_cy = (by0 + by1) / 2.0
-            pts = _detect_features(curr_gray, bx0, by0, bx1, by1)
+            # Reset bbox to the NEAREST segment in the metadata for this shot
+            best_bbox = [bx0, by0, bx1, by1] # fallback to original
+            if "segments" in scene:
+                # Find the segment closest to the current frame index
+                valid_segs = [s for s in scene["segments"] if s.get("start_frame", 0) <= idx]
+                if valid_segs:
+                    best_seg = max(valid_segs, key=lambda s: s.get("start_frame", 0))
+                    sb = best_seg.get("bbox")
+                    if sb:
+                        best_bbox = [
+                            max(0, min(int(sb[0] / scale_x), proc_width - 1)),
+                            max(0, min(int(sb[1] / scale_y), proc_height - 1)),
+                            max(0, min(int(sb[2] / scale_x), proc_width - 1)),
+                            max(0, min(int(sb[3] / scale_y), proc_height - 1))
+                        ]
+            
+            cur_cx = (best_bbox[0] + best_bbox[2]) / 2.0
+            cur_cy = (best_bbox[1] + best_bbox[3]) / 2.0
+            pts = _detect_features(curr_gray, best_bbox[0], best_bbox[1], best_bbox[2], best_bbox[3])
             frames_since_refresh = 0
             
             rx0 = max(0, int(cur_cx - bbox_w / 2))
@@ -719,7 +877,7 @@ def generate_temporal_alpha_masks(
             rx1 = min(proc_width,  rx0 + bbox_w)
             ry1 = min(proc_height, ry0 + bbox_h)
             
-            gc_mask = grabcut_product_mask(frames[idx], [rx0, ry0, rx1, ry1])
+            gc_mask = grabcut_product_mask(frames[idx], [rx0, ry0, rx1, ry1], prompt_text)
             if gc_mask.sum() > 0:
                 masks[idx] = gc_mask
             else:
@@ -772,8 +930,112 @@ def generate_temporal_alpha_masks(
         ry1 = min(proc_height, ry0 + bbox_h)
 
         if rx1 > rx0 and ry1 > ry0:
-            gc_mask = grabcut_product_mask(frames[idx], [rx0, ry0, rx1, ry1])
-            if gc_mask.sum() > 0:
+            gc_mask = grabcut_product_mask(frames[idx], [rx0, ry0, rx1, ry1], prompt_text)
+            
+            # ── Temporal fallback under heavy occlusion ──────────────────
+            # If the new mask is drastically smaller than the anchor mask,
+            # it means the product is mostly hidden behind a person.
+            # In that case, warp the previous frame's mask with optical
+            # flow — this gives a much more stable result than a nearly-
+            # empty GrabCut output.
+            anchor_area = int(masks[anchor_frame_index].sum() / 255) if masks[anchor_frame_index] is not None else 1
+            current_area = int(gc_mask.sum() / 255)
+            min_acceptable = max(anchor_area * 0.20, MIN_MASK_PIXELS)
+            
+            if current_area < min_acceptable and masks[idx - 1] is not None and masks[idx - 1].sum() > 0:
+                # Warp previous mask via dense optical flow
+                warped = warp_mask(masks[idx - 1], frames[idx - 1], frames[idx])
+                # Clip warped mask to the tracked bbox
+                bbox_clip = np.zeros((proc_height, proc_width), dtype=np.uint8)
+                bbox_clip[ry0:ry1, rx0:rx1] = 255
+                warped = cv2.bitwise_and(warped, bbox_clip)
+                masks[idx] = warped
+                if idx % 30 == 0:
+                    print(f"[MASK] Frame {idx}: heavy occlusion detected, using warped previous mask")
+            elif gc_mask.sum() > 0:
+                masks[idx] = gc_mask
+            else:
+                masks[idx] = bbox_to_mask([rx0, ry0, rx1, ry1], proc_height, proc_width)
+        else:
+            masks[idx] = np.zeros((proc_height, proc_width), dtype=np.uint8)
+
+        prev_gray = curr_gray
+
+    # ── Backward Tracking (Anchor -> 0) ──────────────────────────────────
+    print(f"[MASK] Starting backward propagation from anchor {anchor_frame_index}...")
+    prev_gray = anchor_gray.copy()
+    cur_cx    = (bx0 + bx1) / 2.0
+    cur_cy    = (by0 + by1) / 2.0
+    pts       = _detect_features(anchor_gray, bx0, by0, bx1, by1)
+    frames_since_refresh = 0
+
+    for idx in range(anchor_frame_index - 1, -1, -1):
+        if idx % 10 == 0:
+            print(f"[MASK] Backward tracking {idx}/{anchor_frame_index}...")
+
+        curr_gray = cv2.cvtColor(frames[idx], cv2.COLOR_BGR2GRAY)
+
+        # Scene cut detection (backward)
+        if is_shot_cut(frames[idx + 1], frames[idx]):
+            cur_cx = (bx0 + bx1) / 2.0
+            cur_cy = (by0 + by1) / 2.0
+            pts = _detect_features(curr_gray, bx0, by0, bx1, by1)
+            frames_since_refresh = 0
+            
+            rx0 = max(0, int(cur_cx - bbox_w / 2))
+            ry0 = max(0, int(cur_cy - bbox_h / 2))
+            rx1 = min(proc_width,  rx0 + bbox_w)
+            ry1 = min(proc_height, ry0 + bbox_h)
+            
+            gc_mask = grabcut_product_mask(frames[idx], [rx0, ry0, rx1, ry1], prompt_text)
+            masks[idx] = gc_mask if gc_mask.sum() > 0 else bbox_to_mask([rx0, ry0, rx1, ry1], proc_height, proc_width)
+            prev_gray = curr_gray
+            continue
+
+        frames_since_refresh += 1
+        if frames_since_refresh >= REFRESH_INTERVAL and pts is not None:
+            rx0 = max(0, int(cur_cx - bbox_w / 2))
+            ry0 = max(0, int(cur_cy - bbox_h / 2))
+            rx1 = min(proc_width,  rx0 + bbox_w)
+            ry1 = min(proc_height, ry0 + bbox_h)
+            pts = _detect_features(curr_gray, rx0, ry0, rx1, ry1)
+            frames_since_refresh = 0
+
+        if pts is not None and len(pts) >= 3:
+            new_pts, status, _ = cv2.calcOpticalFlowPyrLK(prev_gray, curr_gray, pts, None, **lk_params)
+            good_new = new_pts[status.ravel() == 1]
+            good_old = pts[status.ravel() == 1]
+            if len(good_new) >= 3:
+                dx = float(np.median(good_new[:, 0, 0] - good_old[:, 0, 0]))
+                dy = float(np.median(good_new[:, 0, 1] - good_old[:, 0, 1]))
+                cur_cx += dx
+                cur_cy += dy
+                pts = good_new.reshape(-1, 1, 2)
+            else:
+                rx0 = max(0, int(cur_cx - bbox_w / 2))
+                ry0 = max(0, int(cur_cy - bbox_h / 2))
+                rx1 = min(proc_width,  rx0 + bbox_w)
+                ry1 = min(proc_height, ry0 + bbox_h)
+                pts = _detect_features(curr_gray, rx0, ry0, rx1, ry1)
+                frames_since_refresh = 0
+
+        rx0 = max(0, int(cur_cx - bbox_w / 2))
+        ry0 = max(0, int(cur_cy - bbox_h / 2))
+        rx1 = min(proc_width,  rx0 + bbox_w)
+        ry1 = min(proc_height, ry0 + bbox_h)
+
+        if rx1 > rx0 and ry1 > ry0:
+            gc_mask = grabcut_product_mask(frames[idx], [rx0, ry0, rx1, ry1], prompt_text)
+            anchor_area = int(masks[anchor_frame_index].sum() / 255) if masks[anchor_frame_index] is not None else 1
+            current_area = int(gc_mask.sum() / 255)
+            min_acceptable = max(anchor_area * 0.20, MIN_MASK_PIXELS)
+            
+            if current_area < min_acceptable and masks[idx + 1] is not None and masks[idx + 1].sum() > 0:
+                warped = warp_mask(masks[idx + 1], frames[idx + 1], frames[idx])
+                bbox_clip = np.zeros((proc_height, proc_width), dtype=np.uint8)
+                bbox_clip[ry0:ry1, rx0:rx1] = 255
+                masks[idx] = cv2.bitwise_and(warped, bbox_clip)
+            elif gc_mask.sum() > 0:
                 masks[idx] = gc_mask
             else:
                 masks[idx] = bbox_to_mask([rx0, ry0, rx1, ry1], proc_height, proc_width)
@@ -826,12 +1088,12 @@ def generate_temporal_alpha_masks(
     }
 
 
-def generate_mask_video(show_id: str) -> str:
+def generate_mask_video(show_id: str, anchor_frame_index: int = 0, end_frame_index: int = -1) -> str:
     """
     Wrapper function to maintain backward compatibility with ingestion.py
     Calls the new SAM3 pipeline and returns the absolute path to the mask video.
     """
-    result = generate_temporal_alpha_masks(show_id)
+    result = generate_temporal_alpha_masks(show_id, anchor_frame_index=anchor_frame_index, end_frame_index=end_frame_index)
     return os.path.abspath(result["mask_video"])
 
 

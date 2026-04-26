@@ -1,0 +1,102 @@
+{
+  "show_id": "castaway_fedex",
+  "target_object": "white FedEx package box with purple and orange logo",
+  "video_filepath": "assets/input/CastAway.mp4",
+  "video_meta": {
+    "total_frames": 498,
+    "fps": 29.97002997002997,
+    "width": 1280,
+    "height": 720,
+    "duration": 16.617
+  },
+  "segments": [
+    {
+      "start_frame": 0,
+      "end_frame": -1,
+      "confidence": 1.0,
+      "bbox": [
+        560,
+        430,
+        710,
+        550
+      ],
+      "product_name": "white FedEx package box with purple and orange logo"
+    }
+  ],
+  "frame_results": [
+    {
+      "product_detected": true,
+      "detections": [
+        {
+          "product_name": "FedEx package box",
+          "confidence": 0.9,
+          "bbox": [
+            530,
+            329,
+            695,
+            476
+          ]
+        },
+        {
+          "product_name": "FedEx package box",
+          "confidence": 0.8,
+          "bbox": [
+            501,
+            362,
+            676,
+            517
+          ]
+        },
+        {
+          "product_name": "FedEx package box",
+          "confidence": 0.7,
+          "bbox": [
+            688,
+            483,
+            860,
+            610
+          ]
+        }
+      ],
+      "description": "The image shows a person carrying a large package and several FedEx boxes on a beach. There are multiple white FedEx package boxes with purple and orange logos visible.",
+      "frame_idx": 0,
+      "timestamp": 0.0
+    },
+    {
+      "frame_idx": 89,
+      "timestamp": 2.97,
+      "product_detected": false,
+      "error": "Expecting value: line 1 column 1 (char 0)"
+    },
+    {
+      "frame_idx": 178,
+      "timestamp": 5.939,
+      "product_detected": false,
+      "error": "Expecting value: line 1 column 1 (char 0)"
+    },
+    {
+      "frame_idx": 267,
+      "timestamp": 8.909,
+      "product_detected": false,
+      "error": "Expecting value: line 1 column 1 (char 0)"
+    },
+    {
+      "frame_idx": 356,
+      "timestamp": 11.879,
+      "product_detected": false,
+      "error": "Expecting value: line 1 column 1 (char 0)"
+    },
+    {
+      "frame_idx": 445,
+      "timestamp": 14.848,
+      "product_detected": false,
+      "error": "Expecting value: line 1 column 1 (char 0)"
+    }
+  ],
+  "initial_bounding_box": [
+    560,
+    430,
+    710,
+    550
+  ]
+}

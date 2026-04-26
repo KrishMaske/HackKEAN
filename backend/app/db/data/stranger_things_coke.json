@@ -1,0 +1,150 @@
+{
+  "show_id": "stranger_things_coke",
+  "target_object": "coca cola can",
+  "video_filepath": "assets/input/COCA_COLA_STRANGER_THINGS.mp4",
+  "video_meta": {
+    "total_frames": 248,
+    "fps": 30.0,
+    "width": 1920,
+    "height": 1080,
+    "duration": 8.267
+  },
+  "segments": [
+    {
+      "start_frame": 0,
+      "end_frame": -1,
+      "confidence": 1.0,
+      "bbox": [
+        1015,
+        600,
+        1135,
+        830
+      ],
+      "product_name": "coca cola can"
+    }
+  ],
+  "frame_results": [
+    {
+      "product_detected": true,
+      "product_name": "Coca Cola",
+      "confidence": 1.0,
+      "bbox": [
+        465,
+        576,
+        555,
+        756
+      ],
+      "description": "A red and white Coca Cola can is clearly visible on the table in front of the person.",
+      "frame_idx": 0,
+      "timestamp": 0.0
+    },
+    {
+      "product_detected": true,
+      "product_name": "Coca Cola",
+      "confidence": 1.0,
+      "bbox": [
+        478,
+        616,
+        574,
+        804
+      ],
+      "description": "A red and white Coca Cola can is sitting on a table in front of a person wearing a hospital gown and a brain wave monitoring device on their head.",
+      "frame_idx": 30,
+      "timestamp": 1.0
+    },
+    {
+      "product_detected": true,
+      "product_name": "Coca Cola",
+      "confidence": 1.0,
+      "bbox": [
+        465,
+        591,
+        574,
+        805
+      ],
+      "description": "A red and white Coca Cola can is sitting on a table in front of a person wearing a hospital gown and a brain wave monitoring device on their head.",
+      "frame_idx": 60,
+      "timestamp": 2.0
+    },
+    {
+      "product_detected": true,
+      "product_name": "Coca Cola can",
+      "confidence": 0.9,
+      "bbox": [
+        427,
+        591,
+        612,
+        824
+      ],
+      "description": "A red and white Coca Cola can is standing on its side in the center of the table.",
+      "frame_idx": 90,
+      "timestamp": 3.0
+    },
+    {
+      "product_detected": true,
+      "product_name": "Coca Cola can",
+      "confidence": 0.9,
+      "bbox": [
+        770,
+        710,
+        910,
+        876
+      ],
+      "description": "A red and white crushed Coca Cola can is visible on the table in front of the girl.",
+      "frame_idx": 120,
+      "timestamp": 4.0
+    },
+    {
+      "product_detected": true,
+      "product_name": "Coca Cola",
+      "confidence": 0.9,
+      "bbox": [
+        785,
+        768,
+        992,
+        871
+      ],
+      "description": "A red and white crushed can, likely a Coca Cola can, is partially visible on the right side of the frame.",
+      "frame_idx": 150,
+      "timestamp": 5.0
+    },
+    {
+      "product_detected": true,
+      "product_name": "Coca Cola can",
+      "confidence": 0.9,
+      "bbox": [
+        715,
+        784,
+        876,
+        876
+      ],
+      "description": "A red and white Coca Cola can is partially visible in the bottom right corner of the frame.",
+      "frame_idx": 180,
+      "timestamp": 6.0
+    },
+    {
+      "product_detected": false,
+      "product_name": null,
+      "confidence": 0.0,
+      "bbox": null,
+      "description": "A person wearing a hospital gown and a headpiece with wires is centered in the frame. No product packaging is visible.",
+      "frame_idx": 210,
+      "timestamp": 7.0
+    },
+    {
+      "product_detected": false,
+      "product_name": null,
+      "confidence": 0.0,
+      "bbox": null,
+      "description": "A young girl wearing a hospital gown and a brain activity monitoring headset is centered in the frame, with a dark green tiled wall behind her. No product packaging is visible.",
+      "frame_idx": 240,
+      "timestamp": 8.0
+    }
+  ],
+  "initial_bounding_box": [
+    1015,
+    600,
+    1135,
+    830
+  ]
+}
